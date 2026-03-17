@@ -11,7 +11,7 @@ import {
   GEMINI_CLI_HEADERS,
 } from "../constants";
 import { createLogger } from "../plugin/logger";
-import { calculateTokenExpiry } from "../plugin/auth";
+import { calculateTokenExpiry, formatRefreshParts } from "../plugin/auth";
 import {
   loadManagedProject,
   onboardManagedProject,
@@ -235,7 +235,10 @@ export async function exchangeAntigravity(
       effectiveProjectId = await fetchProjectID(tokenPayload.access_token);
     }
 
-    const storedRefresh = `${refreshToken}|${effectiveProjectId || ""}`;
+    const storedRefresh = formatRefreshParts({
+      refreshToken,
+      managedProjectId: effectiveProjectId || "",
+    });
 
     return {
       type: "success",

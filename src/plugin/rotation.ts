@@ -228,22 +228,31 @@ export function sortByLruWithHealth(
     });
 }
 
+import { getConcurrencyTracker } from "./concurrency";
+
 /** Stickiness bonus added to current account's score to prevent unnecessary switching */
 const STICKINESS_BONUS = 150;
+
+/** Extra bonus for continuing a specific conversation (prevents unnecessary prompt cache misses) */
+const CONVERSATION_STICKINESS_BONUS = 300;
 
 /** Minimum score advantage required to switch away from current account */
 const SWITCH_THRESHOLD = 100;
 
+/** Penalty for each concurrent request to distribute load */
+const CONCURRENCY_PENALTY = 200;
+
 /**
  * Select account using hybrid strategy with stickiness:
  * 1. Filter available accounts (not rate-limited, not cooling down, healthy, has tokens)
- * 2. Calculate priority score: health (2x) + tokens (5x) + freshness (0.1x)
- * 3. Apply stickiness bonus to current account
+ * 2. Calculate priority score: health (2x) + tokens (5x) + freshness (0.1x) - concurrency penalty
+ * 3. Apply stickiness bonuses (session-based and current-active-account)
  * 4. Only switch if another account beats current by SWITCH_THRESHOLD
  * 
  * @param accounts - All accounts with their metrics
  * @param tokenTracker - Token bucket tracker for token balances
  * @param currentAccountIndex - Currently active account index (for stickiness)
+ * @param lastAccountForSession - Last used account index for this specific session/conversation
  * @param minHealthScore - Minimum health score to be considered
  * @returns Best account index, or null if none available
  */
@@ -251,8 +260,10 @@ export function selectHybridAccount(
   accounts: AccountWithMetrics[],
   tokenTracker: TokenBucketTracker,
   currentAccountIndex: number | null = null,
+  lastAccountForSession: number | null = null,
   minHealthScore: number = 50,
 ): number | null {
+  const concurrencyTracker = getConcurrencyTracker();
   const candidates = accounts
     .filter(acc => 
       !acc.isRateLimited && 
@@ -262,7 +273,8 @@ export function selectHybridAccount(
     )
     .map(acc => ({
       ...acc,
-      tokens: tokenTracker.getTokens(acc.index)
+      tokens: tokenTracker.getTokens(acc.index),
+      activeCount: concurrencyTracker.getActiveCount(acc.index)
     }));
 
   if (candidates.length === 0) {
@@ -273,13 +285,19 @@ export function selectHybridAccount(
   const scored = candidates
     .map(acc => {
       const baseScore = calculateHybridScore(acc, maxTokens);
-      // Apply stickiness bonus to current account
+      
+      // Apply stickiness bonus to current account (global stickiness)
       const stickinessBonus = acc.index === currentAccountIndex ? STICKINESS_BONUS : 0;
+      
+      // Apply conversation stickiness bonus (preserves prompt cache)
+      const sessionBonus = acc.index === lastAccountForSession ? CONVERSATION_STICKINESS_BONUS : 0;
+      
       return {
         index: acc.index,
         baseScore,
-        score: baseScore + stickinessBonus,
-        isCurrent: acc.index === currentAccountIndex
+        score: baseScore + stickinessBonus + sessionBonus,
+        isCurrent: acc.index === currentAccountIndex,
+        isSessionMatch: acc.index === lastAccountForSession
       };
     })
     .sort((a, b) => b.score - a.score);
@@ -289,11 +307,19 @@ export function selectHybridAccount(
     return null;
   }
 
+  // If we have a session match and it's still healthy/available, prefer it strongly
+  const sessionCandidate = scored.find(s => s.isSessionMatch);
+  if (sessionCandidate && !best.isSessionMatch) {
+    const advantage = best.baseScore - sessionCandidate.baseScore;
+    // Don't switch away from conversation-sticky account unless advantage is very high
+    if (advantage < (SWITCH_THRESHOLD + CONVERSATION_STICKINESS_BONUS)) {
+      return sessionCandidate.index;
+    }
+  }
+
   // If current account is still a candidate, check if switch is warranted
   const currentCandidate = scored.find(s => s.isCurrent);
   if (currentCandidate && !best.isCurrent) {
-    // Only switch if best beats current's BASE score by threshold
-    // (compare base scores to avoid circular stickiness bonus comparison)
     const advantage = best.baseScore - currentCandidate.baseScore;
     if (advantage < SWITCH_THRESHOLD) {
       return currentCandidate.index;
@@ -303,19 +329,24 @@ export function selectHybridAccount(
   return best.index;
 }
 
-interface AccountWithTokens extends AccountWithMetrics {
+interface AccountWithContext extends AccountWithMetrics {
   tokens: number;
+  activeCount: number;
 }
 
 function calculateHybridScore(
-  account: AccountWithTokens,
+  account: AccountWithContext,
   maxTokens: number
 ): number {
   const healthComponent = account.healthScore * 2; // 0-200
   const tokenComponent = (account.tokens / maxTokens) * 100 * 5; // 0-500
   const secondsSinceUsed = (Date.now() - account.lastUsed) / 1000;
   const freshnessComponent = Math.min(secondsSinceUsed, 3600) * 0.1; // 0-360
-  return Math.max(0, healthComponent + tokenComponent + freshnessComponent);
+  
+  // Penalty for each active request to distribute load during high concurrency
+  const concurrencyPenalty = account.activeCount * CONCURRENCY_PENALTY;
+  
+  return Math.max(0, healthComponent + tokenComponent + freshnessComponent - concurrencyPenalty);
 }
 
 // ============================================================================
@@ -374,10 +405,31 @@ export class TokenBucketTracker {
   }
 
   /**
-   * Check if account has enough tokens for a request.
-   * @param cost Cost of the request (default: 1)
+   * Get the cost of a request based on the model family and name.
    */
-  hasTokens(accountIndex: number, cost: number = 1): boolean {
+  getModelCost(family?: string | null, model?: string | null): number {
+    if (family === "claude") {
+      return 15; // Claude models are expensive
+    }
+    if (model) {
+      const lowerModel = model.toLowerCase();
+      if (lowerModel.includes("pro") || lowerModel.includes("ultra")) {
+        return 10;
+      }
+      if (lowerModel.includes("flash") || lowerModel.includes("lite")) {
+        return 2;
+      }
+    }
+    return 5; // Default cost
+  }
+
+  /**
+   * Check if account has enough tokens for a request.
+   * @param family Model family
+   * @param model Model name
+   */
+  hasTokens(accountIndex: number, family?: string | null, model?: string | null): boolean {
+    const cost = this.getModelCost(family, model);
     return this.getTokens(accountIndex) >= cost;
   }
 
@@ -385,7 +437,8 @@ export class TokenBucketTracker {
    * Consume tokens for a request.
    * @returns true if tokens were consumed, false if insufficient
    */
-  consume(accountIndex: number, cost: number = 1): boolean {
+  consume(accountIndex: number, family?: string | null, model?: string | null): boolean {
+    const cost = this.getModelCost(family, model);
     const current = this.getTokens(accountIndex);
     if (current < cost) {
       return false;
@@ -401,10 +454,11 @@ export class TokenBucketTracker {
   /**
    * Refund tokens (e.g., if request wasn't actually sent).
    */
-  refund(accountIndex: number, amount: number = 1): void {
+  refund(accountIndex: number, family?: string | null, model?: string | null): void {
+    const cost = this.getModelCost(family, model);
     const current = this.getTokens(accountIndex);
     this.buckets.set(accountIndex, {
-      tokens: Math.min(this.config.maxTokens, current + amount),
+      tokens: Math.min(this.config.maxTokens, current + cost),
       lastUpdated: Date.now(),
     });
   }

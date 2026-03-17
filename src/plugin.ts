@@ -49,6 +49,8 @@ import { initDiskSignatureCache } from "./plugin/cache";
 import { createProactiveRefreshQueue, type ProactiveRefreshQueue } from "./plugin/refresh-queue";
 import { initLogger, createLogger } from "./plugin/logger";
 import { initHealthTracker, getHealthTracker, initTokenTracker, getTokenTracker } from "./plugin/rotation";
+import { getConcurrencyTracker } from "./concurrency";
+import { getSessionAccountManager } from "./sessions";
 import { initAntigravityVersion } from "./plugin/version";
 import { executeSearch } from "./plugin/search";
 import type {
@@ -69,6 +71,22 @@ const CAPACITY_BACKOFF_TIERS_MS = [5000, 10000, 20000, 30000, 60000];
 function getCapacityBackoffDelay(consecutiveFailures: number): number {
   const index = Math.min(consecutiveFailures, CAPACITY_BACKOFF_TIERS_MS.length - 1);
   return CAPACITY_BACKOFF_TIERS_MS[Math.max(0, index)] ?? 5000;
+}
+
+/**
+ * Extracts sessionId from a Generative Language request payload if possible.
+ */
+function preparedRequestSessionId(input: RequestInfo): string | undefined {
+  try {
+    const bodyText = (input as Request).body ? (input as any)._bodyText : undefined;
+    if (bodyText) {
+      const payload = JSON.parse(bodyText);
+      return payload.sessionId;
+    }
+  } catch {
+    // ignore
+  }
+  return undefined;
 }
 const warmupAttemptedSessionIds = new Set<string>();
 const warmupSucceededSessionIds = new Set<string>();
@@ -1562,6 +1580,10 @@ export const createAntigravityPlugin = (providerId: string) => async (
               config.quota_refresh_interval_minutes,
             );
 
+            // Resolve sessionId from request context if possible (for stickiness)
+            const sessionId = preparedRequestSessionId(input);
+            const lastAccountForSession = sessionId ? getSessionAccountManager().getLastUsedAccount(sessionId) : null;
+
             let account = accountManager.getCurrentOrNextForFamily(
               family, 
               model, 
@@ -1570,6 +1592,7 @@ export const createAntigravityPlugin = (providerId: string) => async (
               config.pid_offset_enabled,
               config.soft_quota_threshold_percent,
               softQuotaCacheTtlMs,
+              lastAccountForSession,
             );
 
             if (!account && allowQuotaFallback) {
@@ -1583,6 +1606,7 @@ export const createAntigravityPlugin = (providerId: string) => async (
                 config.pid_offset_enabled,
                 config.soft_quota_threshold_percent,
                 softQuotaCacheTtlMs,
+                lastAccountForSession,
               );
               if (account) {
                 pushDebug(
@@ -2016,14 +2040,29 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   }
                 }
 
-                // Consume token for hybrid strategy
+                // Consume token for hybrid strategy with model-specific cost
                 // Refunded later if request fails (429 or network error)
                 if (config.account_selection_strategy === 'hybrid') {
-                  tokenConsumed = getTokenTracker().consume(account.index);
+                  tokenConsumed = getTokenTracker().consume(account.index, family, model);
                 }
 
-                const response = await fetch(prepared.request, prepared.init);
+                // Increment active requests for concurrency tracking
+                getConcurrencyTracker().increment(account.index);
+
+                let response: Response;
+                try {
+                  response = await fetch(prepared.request, prepared.init);
+                } finally {
+                  // Decrement active requests - MUST happen even on network errors
+                  getConcurrencyTracker().decrement(account.index);
+                }
+                
                 pushDebug(`status=${response.status} ${response.statusText}`);
+
+                // Record successful usage for session stickiness
+                if (response.ok && prepared.sessionId) {
+                  getSessionAccountManager().recordUse(prepared.sessionId, account.index);
+                }
 
 
 
@@ -2032,7 +2071,7 @@ export const createAntigravityPlugin = (providerId: string) => async (
                 if (response.status === 429 || response.status === 503 || response.status === 529) {
                   // Refund token on rate limit
                   if (tokenConsumed) {
-                    getTokenTracker().refund(account.index);
+                    getTokenTracker().refund(account.index, family, model);
                     tokenConsumed = false;
                   }
 
