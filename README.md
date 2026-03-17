@@ -130,8 +130,8 @@ opencode run "Hello" --model=google/antigravity-claude-opus-4-6-thinking --varia
 | `gemini-3.1-pro-preview-customtools` | Gemini 3.1 Pro Preview Custom Tools (preview, rollout-dependent) |
 
 > **Routing Behavior:**
-> - **Antigravity-first (default):** Gemini models use Antigravity quota across accounts.
-> - **CLI-first (`cli_first: true`):** Gemini models use Gemini CLI quota first.
+> - **CLI-first (default):** Gemini models use Gemini CLI quota first.
+> - **Antigravity-first (`cli_first: false`):** Gemini models use Antigravity quota across accounts.
 > - When a Gemini quota pool is exhausted, the plugin automatically falls back to the other pool.
 > - Claude and image models always use Antigravity.
 > Model names are automatically transformed for the target API (e.g., `antigravity-gemini-3-flash` → `gemini-3-flash-preview` for CLI).
@@ -593,7 +593,7 @@ Most users don't need to configure anything — defaults work well.
 |--------|---------|--------------
 | `keep_thinking` | `false` | Preserve Claude's thinking across turns. **Warning:** enabling may degrade model stability. |
 | `session_recovery` | `true` | Auto-recover from tool errors |
-| `cli_first` | `false` | Route Gemini models to Gemini CLI first (Claude and image models stay on Antigravity). |
+| `cli_first` | `true` | Route Gemini models to Gemini CLI first (Claude and image models stay on Antigravity). |
 
 ### Account Rotation
 

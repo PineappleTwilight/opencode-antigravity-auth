@@ -3412,7 +3412,7 @@ function resolveHeaderRoutingDecision(
 }
 
 function getCliFirst(config: AntigravityConfig): boolean {
-  return (config as AntigravityConfig & { cli_first?: boolean }).cli_first ?? false;
+  return (config as AntigravityConfig & { cli_first?: boolean }).cli_first ?? true;
 }
 
 function getHeaderStyleFromUrl(

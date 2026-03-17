@@ -51,7 +51,7 @@ const optionDescriptions: Record<string, string> = {
   quota_fallback:
     "Deprecated: accepted for backward compatibility but ignored at runtime. Gemini fallback between Antigravity and Gemini CLI is always enabled.",
   cli_first:
-    "Prefer gemini-cli routing before Antigravity for Gemini models. When false (default), Antigravity is tried first and gemini-cli is fallback.",
+    "Prefer gemini-cli routing before Antigravity for Gemini models. When true (default), gemini-cli is tried first and Antigravity is fallback.",
   toast_scope:
     "Controls which sessions show toast notifications. 'root_only' (default) shows in root session only, 'all' shows in all sessions.",
   scheduling_mode:

@@ -38,6 +38,7 @@ Settings that affect how the model thinks and responds.
 | `session_recovery` | `true` | Auto-recover from tool_result_missing errors |
 | `auto_resume` | `false` | Auto-send resume prompt after recovery |
 | `resume_text` | `"continue"` | Text to send when auto-resuming |
+| `cli_first` | `true` | Prefer Gemini CLI quota before Antigravity for Gemini models |
 
 > **Note:** The `web_search` config options are deprecated. Google Search is now implemented as a dedicated `google_search` tool that the model can call explicitly.
 
@@ -162,6 +163,7 @@ These settings are already `true` by default — you don't need to set them:
 | `session_recovery` | `true` | Auto-recover from errors |
 | `auto_update` | `true` | Keep plugin updated |
 | `switch_on_first_rate_limit` | `true` | Fast account switching |
+| `cli_first` | `true` | Use Gemini CLI quota first |
 
 These settings are `false` by default:
 

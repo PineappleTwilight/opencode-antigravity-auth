@@ -5,7 +5,7 @@ import { DEFAULT_CONFIG } from "./schema";
 
 describe("cli_first config", () => {
   it("includes cli_first default in DEFAULT_CONFIG", () => {
-    expect(DEFAULT_CONFIG).toHaveProperty("cli_first", false);
+    expect(DEFAULT_CONFIG).toHaveProperty("cli_first", true);
   });
 
   it("documents cli_first in the JSON schema", () => {
@@ -18,7 +18,7 @@ describe("cli_first config", () => {
     expect(cliFirst).toBeDefined();
     expect(cliFirst).toMatchObject({
       type: "boolean",
-      default: false,
+      default: true,
     });
     expect(typeof cliFirst?.description).toBe("string");
     expect(cliFirst?.description?.length ?? 0).toBeGreaterThan(0);
