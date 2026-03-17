@@ -49,8 +49,8 @@ import { initDiskSignatureCache } from "./plugin/cache";
 import { createProactiveRefreshQueue, type ProactiveRefreshQueue } from "./plugin/refresh-queue";
 import { initLogger, createLogger } from "./plugin/logger";
 import { initHealthTracker, getHealthTracker, initTokenTracker, getTokenTracker } from "./plugin/rotation";
-import { getConcurrencyTracker } from "./concurrency";
-import { getSessionAccountManager } from "./sessions";
+import { getConcurrencyTracker } from "./plugin/concurrency";
+import { getSessionAccountManager } from "./plugin/sessions";
 import { initAntigravityVersion } from "./plugin/version";
 import { executeSearch } from "./plugin/search";
 import type {

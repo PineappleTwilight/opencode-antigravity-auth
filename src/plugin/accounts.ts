@@ -504,13 +504,14 @@ export class AccountManager {
   }
 
   getCurrentOrNextForFamily(
-    family: ModelFamily, 
+    family: ModelFamily,
     model?: string | null,
     strategy: AccountSelectionStrategy = 'sticky',
     headerStyle: HeaderStyle = 'antigravity',
     pidOffsetEnabled: boolean = false,
     softQuotaThresholdPercent: number = 100,
     softQuotaCacheTtlMs: number = 10 * 60 * 1000,
+    lastAccountForSession: number | null = null,
   ): ManagedAccount | null {
     const quotaKey = getQuotaKey(family, headerStyle, model);
 
@@ -526,7 +527,7 @@ export class AccountManager {
     if (strategy === 'hybrid') {
       const healthTracker = getHealthTracker();
       const tokenTracker = getTokenTracker();
-      
+
       const accountsWithMetrics: AccountWithMetrics[] = this.accounts
         .filter(acc => acc.enabled !== false)
         .map(acc => {
@@ -535,7 +536,7 @@ export class AccountManager {
             index: acc.index,
             lastUsed: acc.lastUsed,
             healthScore: healthTracker.getScore(acc.index),
-            isRateLimited: isRateLimitedForFamily(acc, family, model) || 
+            isRateLimited: isRateLimitedForFamily(acc, family, model) ||
                           isOverSoftQuotaThreshold(acc, family, softQuotaThresholdPercent, softQuotaCacheTtlMs, model),
             isCoolingDown: this.isAccountCoolingDown(acc),
           };
@@ -543,8 +544,13 @@ export class AccountManager {
 
       // Get current account index for stickiness
       const currentIndex = this.currentAccountIndexByFamily[family] ?? null;
-      
-      const selectedIndex = selectHybridAccount(accountsWithMetrics, tokenTracker, currentIndex);
+
+      const selectedIndex = selectHybridAccount(
+        accountsWithMetrics, 
+        tokenTracker, 
+        currentIndex,
+        lastAccountForSession
+      );
       if (selectedIndex !== null) {
         const selected = this.accounts[selectedIndex];
         if (selected) {
@@ -554,6 +560,7 @@ export class AccountManager {
           return selected;
         }
       }
+
     }
 
     // Fallback: sticky selection (used when hybrid finds no candidates)
