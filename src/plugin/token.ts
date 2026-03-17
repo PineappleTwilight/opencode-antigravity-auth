@@ -3,6 +3,7 @@ import { formatRefreshParts, parseRefreshParts, calculateTokenExpiry } from "./a
 import { clearCachedAuth, storeCachedAuth } from "./cache";
 import { createLogger } from "./logger";
 import { invalidateProjectContextCache } from "./project";
+import { toast } from "./ui/toast";
 import type { OAuthAuthDetails, PluginClient, RefreshParts } from "./types";
 
 const log = createLogger("token");
@@ -123,6 +124,10 @@ export async function refreshAccessToken(
 
       if (code === "invalid_grant") {
         log.warn("Google revoked the stored refresh token - reauthentication required");
+        toast.error("Google session revoked - please re-authenticate", {
+          title: "Antigravity",
+          force: true
+        });
         invalidateProjectContextCache(auth.refresh);
         clearCachedAuth(auth.refresh);
       }

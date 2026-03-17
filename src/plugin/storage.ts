@@ -15,6 +15,7 @@ import { randomBytes } from "node:crypto";
 import lockfile from "proper-lockfile";
 import type { HeaderStyle } from "../constants";
 import { createLogger } from "./logger";
+import { toast } from "./ui/toast";
 
 const log = createLogger("storage");
 
@@ -296,6 +297,11 @@ function migrateLegacyWindowsConfig(): boolean {
       unlinkSync(legacyPath);
       log.info("Migrated Windows config via copy+delete", { from: legacyPath, to: newPath });
     }
+
+    toast.info("Migrated legacy configuration", {
+      title: "Antigravity",
+      message: "Moved configuration to new unified location.",
+    });
 
     return true;
   } catch (error) {

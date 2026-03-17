@@ -7,6 +7,7 @@ import {
 } from "../constants";
 import { formatRefreshParts, parseRefreshParts } from "./auth";
 import { createLogger } from "./logger";
+import { toast } from "./ui/toast";
 import type { OAuthAuthDetails, ProjectContextResult } from "./types";
 
 const log = createLogger("project");
@@ -293,6 +294,11 @@ export async function onboardManagedProject(
             console.log(`URL: ${validation.url}\n`);
           }
           log.warn("Onboarding requires account validation", { url: validation.url });
+          toast.warn("Account validation required", {
+            title: "Antigravity",
+            message: validation.message || "Google requires you to validate your account in a browser.",
+            force: true,
+          });
         } else {
           log.debug("Onboarding request failed", { 
             status: response.status, 
@@ -434,6 +440,10 @@ export async function ensureProjectContext(auth: OAuthAuthDetails): Promise<Proj
 
     log.warn("Failed to provision managed project - account may not work correctly", {
       hasProjectId: !!parts.projectId,
+    });
+    toast.warn("Provisioning failed", {
+      title: "Antigravity",
+      message: "Could not provision a managed project. Account may have limited access.",
     });
 
     if (parts.projectId) {

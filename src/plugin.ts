@@ -42,7 +42,7 @@ import { startOAuthListener, type OAuthListener } from "./plugin/server";
 import { clearAccounts, loadAccounts, saveAccounts, saveAccountsReplace } from "./plugin/storage";
 import { AccountManager, type ModelFamily, parseRateLimitReason, calculateBackoffMs, computeSoftQuotaCacheTtlMs } from "./plugin/accounts";
 import { createAutoUpdateCheckerHook } from "./hooks/auto-update-checker";
-import { loadConfig, initRuntimeConfig, type AntigravityConfig } from "./plugin/config";
+import { loadConfig, initRuntimeConfig, wasConfigCreated, getUserConfigPath, type AntigravityConfig } from "./plugin/config";
 import { createSessionRecoveryHook, getRecoverySuccessToast } from "./plugin/recovery";
 import { checkAccountsQuota } from "./plugin/quota";
 import { initDiskSignatureCache } from "./plugin/cache";
@@ -53,6 +53,7 @@ import { getConcurrencyTracker } from "./plugin/concurrency";
 import { getSessionAccountManager } from "./plugin/sessions";
 import { initAntigravityVersion } from "./plugin/version";
 import { executeSearch } from "./plugin/search";
+import { initToastService, toast, setChildSession } from "./plugin/ui/toast";
 import type {
   GetAuth,
   LoaderResult,
@@ -90,11 +91,6 @@ function preparedRequestSessionId(input: RequestInfo): string | undefined {
 }
 const warmupAttemptedSessionIds = new Set<string>();
 const warmupSucceededSessionIds = new Set<string>();
-
-// Track if this plugin instance is running in a child session (subagent, background task)
-// Used to filter toasts based on toast_scope config
-let isChildSession = false;
-let childSessionParentID: string | undefined = undefined;
 
 const log = createLogger("plugin");
 
@@ -1244,6 +1240,16 @@ export const createAntigravityPlugin = (providerId: string) => async (
   // Initialize structured logger for TUI integration
   initLogger(client);
   
+  // Initialize toast service for user-facing notifications
+  initToastService(client, config);
+  
+  if (wasConfigCreated()) {
+    toast.info("Created default configuration", {
+      title: "Antigravity",
+      message: `Config created at ${getUserConfigPath()}`,
+    });
+  }
+  
   // Fetch latest Antigravity version from remote API (non-blocking, falls back to hardcoded)
   await initAntigravityVersion();
   
@@ -1293,13 +1299,11 @@ export const createAntigravityPlugin = (providerId: string) => async (
     if (input.event.type === "session.created") {
       const props = input.event.properties as { info?: { parentID?: string } } | undefined;
       if (props?.info?.parentID) {
-        isChildSession = true;
-        childSessionParentID = props.info.parentID;
+        setChildSession(true);
         log.debug("child-session-detected", { parentID: props.info.parentID });
       } else {
         // Reset for root sessions - important when plugin instance is reused
-        isChildSession = false;
-        childSessionParentID = undefined;
+        setChildSession(false);
         log.debug("root-session-detected", {});
       }
     }
@@ -1334,16 +1338,9 @@ export const createAntigravityPlugin = (providerId: string) => async (
           
           // Show success toast (respects toast_scope for child sessions)
           const successToast = getRecoverySuccessToast();
-          log.debug("recovery-toast", { ...successToast, isChildSession, toastScope: config.toast_scope });
-          if (!(config.toast_scope === "root_only" && isChildSession)) {
-            await client.tui.showToast({
-              body: {
-                title: successToast.title,
-                message: successToast.message,
-                variant: "success",
-              },
-            }).catch(() => {});
-          }
+          toast.success(successToast.message, {
+            title: successToast.title,
+          });
         }
       }
     }
@@ -1449,13 +1446,7 @@ export const createAntigravityPlugin = (providerId: string) => async (
       if (isDebugEnabled()) {
         const logPath = getLogFilePath();
         if (logPath) {
-          try {
-            await client.tui.showToast({
-              body: { message: `Debug log: ${logPath}`, variant: "info" },
-            });
-          } catch {
-            // TUI may not be available
-          }
+          toast.info(`Debug log: ${logPath}`, { title: "Antigravity" });
         }
       }
 
@@ -1523,35 +1514,12 @@ export const createAntigravityPlugin = (providerId: string) => async (
           const quietMode = config.quiet_mode;
           const toastScope = config.toast_scope;
 
-          // Helper to show toast without blocking on abort (respects quiet_mode and toast_scope)
+          // Helper to show toast without blocking on abort (respects quiet_mode and toast_scope via ToastService)
           const showToast = async (message: string, variant: "info" | "warning" | "success" | "error") => {
-            // Always log to debug regardless of toast filtering
-            log.debug("toast", { message, variant, isChildSession, toastScope });
-            
-            if (quietMode) return;
-            if (abortSignal?.aborted) return;
-            
-            // Filter toasts for child sessions when toast_scope is "root_only"
-            if (toastScope === "root_only" && isChildSession) {
-              log.debug("toast-suppressed-child-session", { message, variant, parentID: childSessionParentID });
-              return;
-            }
-            
-            if (variant === "warning" && message.toLowerCase().includes("rate")) {
-              if (!shouldShowRateLimitToast(message)) {
-                return;
-              }
-            }
-            
-            try {
-              await client.tui.showToast({
-                body: { message, variant },
-              });
-            } catch {
-              // TUI may not be available
-            }
+            // ToastService handles quiet_mode, toast_scope, and isChildSession
+            await toast.info(message, { variant, signal: abortSignal });
           };
-          
+
           const hasOtherAccountWithAntigravity = (currentAccount: any): boolean => {
             if (family !== "gemini") return false;
             // Use AccountManager method which properly checks for disabled/cooling-down accounts
@@ -1623,9 +1591,9 @@ export const createAntigravityPlugin = (providerId: string) => async (
                 
                 if (softQuotaWaitMs === null || (maxWaitMs > 0 && softQuotaWaitMs > maxWaitMs)) {
                   const waitTimeFormatted = softQuotaWaitMs ? formatWaitTime(softQuotaWaitMs) : "unknown";
-                  await showToast(
+                  await toast.info(
                     `All accounts over ${threshold}% quota threshold. Resets in ${waitTimeFormatted}.`,
-                    "error"
+                    { variant: "error" }
                   );
                   throw new Error(
                     `Quota protection: All ${accountCount} account(s) are over ${threshold}% usage for ${family}. ` +
@@ -1754,6 +1722,10 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   const removed = accountManager.removeAccount(account);
                   if (removed) {
                     log.warn("Removed revoked account from pool - reauthenticate via `opencode auth login`");
+                    toast.warn(`Session revoked for ${account.email || "account"} - please login again`, {
+                      title: "Antigravity",
+                      force: true,
+                    });
                     try {
                       await accountManager.saveToDisk();
                     } catch (persistError) {
@@ -1924,9 +1896,9 @@ export const createAntigravityPlugin = (providerId: string) => async (
                     alternateStyle,
                   });
                   if (fallbackStyle) {
-                    await showToast(
+                    await toast.info(
                       `Antigravity quota exhausted on all accounts. Using Gemini CLI quota.`,
-                      "warning"
+                      { variant: "warning" }
                     );
                     headerStyle = fallbackStyle;
                     pushDebug(`all-accounts antigravity exhausted, quota fallback: ${headerStyle}`);
@@ -1945,10 +1917,11 @@ export const createAntigravityPlugin = (providerId: string) => async (
                 if (fallbackStyle) {
                   const quotaName = headerStyle === "gemini-cli" ? "Gemini CLI" : "Antigravity";
                   const altQuotaName = fallbackStyle === "gemini-cli" ? "Gemini CLI" : "Antigravity";
-                  await showToast(
+                  await toast.info(
                     `${quotaName} quota exhausted, using ${altQuotaName} quota`,
-                    "warning"
+                    { variant: "warning" }
                   );
+
                   headerStyle = fallbackStyle;
                   pushDebug(`quota fallback: ${headerStyle}`);
                 } else {
@@ -2104,6 +2077,7 @@ export const createAntigravityPlugin = (providerId: string) => async (
                        `⏳ Server busy (${response.status}). Retrying in ${waitSec}s...`,
                        "warning",
                      );
+
                      
                      await sleep(waitMs, abortSignal);
                      
@@ -2224,9 +2198,9 @@ export const createAntigravityPlugin = (providerId: string) => async (
                         });
                         if (fallbackStyle) {
                           const safeModelName = model || "this model";
-                          await showToast(
+                          await toast.info(
                             `Antigravity quota exhausted for ${safeModelName}. Switching to Gemini CLI quota...`,
-                            "warning"
+                            { variant: "warning" }
                           );
                           headerStyle = fallbackStyle;
                           pushDebug(`quota fallback: ${headerStyle}`);
@@ -2243,10 +2217,11 @@ export const createAntigravityPlugin = (providerId: string) => async (
                         });
                         if (fallbackStyle) {
                           const safeModelName = model || "this model";
-                          await showToast(
+                          await toast.info(
                             `Gemini CLI quota exhausted for ${safeModelName}. Switching to Antigravity quota...`,
-                            "warning"
+                            { variant: "warning" }
                           );
+
                           headerStyle = fallbackStyle;
                           pushDebug(`quota fallback: ${headerStyle}`);
                           continue;
@@ -2295,9 +2270,9 @@ export const createAntigravityPlugin = (providerId: string) => async (
 
                     const label = account.email || `Account ${account.index + 1}`;
                     if (accountManager.shouldShowAccountToast(account.index, 60000)) {
-                      await showToast(
+                      await toast.info(
                         `⚠ ${label} needs verification. Run 'opencode auth login' and use Verify accounts.`,
-                        "warning",
+                        { variant: "warning" }
                       );
                       accountManager.markToastShown(account.index);
                     }
@@ -2351,9 +2326,9 @@ export const createAntigravityPlugin = (providerId: string) => async (
                     const cloned = response.clone();
                     const bodyText = await cloned.text();
                     if (bodyText.includes("Prompt is too long") || bodyText.includes("prompt_too_long")) {
-                      await showToast(
+                      await toast.info(
                         "Context too long - use /compact to reduce size",
-                        "warning"
+                        { variant: "warning" }
                       );
                       const errorMessage = `[Antigravity Error] Context is too long for this model.\n\nPlease use /compact to reduce context size, then retry your request.\n\nAlternatively, you can:\n- Use /clear to start fresh\n- Use /undo to remove recent messages\n- Switch to a model with larger context window`;
                       return createSyntheticErrorResponse(errorMessage, prepared.requestedModel);
@@ -2381,9 +2356,9 @@ export const createAntigravityPlugin = (providerId: string) => async (
                     pushDebug(`empty-response: attempt ${currentAttempts}/${maxAttempts}`);
                     
                     if (currentAttempts < maxAttempts) {
-                      await showToast(
+                      await toast.info(
                         `Empty response received. Retrying (${currentAttempts}/${maxAttempts})...`,
-                        "warning"
+                        { variant: "warning" }
                       );
                       await sleep(retryDelayMs, abortSignal);
                       continue; // Retry the endpoint loop
@@ -2422,14 +2397,14 @@ export const createAntigravityPlugin = (providerId: string) => async (
                 const contextError = transformedResponse.headers.get("x-antigravity-context-error");
                 if (contextError) {
                   if (contextError === "prompt_too_long") {
-                    await showToast(
+                    await toast.info(
                       "Context too long - use /compact to reduce size, or trim your request",
-                      "warning"
+                      { variant: "warning" }
                     );
                   } else if (contextError === "tool_pairing") {
-                    await showToast(
+                    await toast.info(
                       "Tool call/result mismatch - use /compact to fix, or /undo last message",
-                      "warning"
+                      { variant: "warning" }
                     );
                   }
                 }
@@ -3124,15 +3099,7 @@ export const createAntigravityPlugin = (providerId: string) => async (
 
               accounts.push(result);
 
-              try {
-                await client.tui.showToast({
-                  body: {
-                    message: `Account ${accounts.length} authenticated${result.email ? ` (${result.email})` : ""}`,
-                    variant: "success",
-                  },
-                });
-              } catch {
-              }
+              toast.success(`Account ${accounts.length} authenticated${result.email ? ` (${result.email})` : ""}`);
 
               try {
                 if (refreshAccountIndex !== undefined) {
@@ -3295,15 +3262,7 @@ export const createAntigravityPlugin = (providerId: string) => async (
                       ? `Added account${result.email ? ` (${result.email})` : ""} - ${newTotal} total`
                       : `Authenticated${result.email ? ` (${result.email})` : ""}`;
 
-                    try {
-                      await client.tui.showToast({
-                        body: {
-                          message: toastMessage,
-                          variant: "success",
-                        },
-                      });
-                    } catch {
-                    }
+                    toast.success(toastMessage);
                   }
 
                   return result;
@@ -3348,16 +3307,7 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   ? `Added account${result.email ? ` (${result.email})` : ""} - ${newTotal} total`
                   : `Authenticated${result.email ? ` (${result.email})` : ""}`;
 
-                try {
-                  await client.tui.showToast({
-                    body: {
-                      message: toastMessage,
-                      variant: "success",
-                    },
-                  });
-                } catch {
-                  // TUI may not be available
-                }
+                toast.success(toastMessage);
               }
 
               return result;

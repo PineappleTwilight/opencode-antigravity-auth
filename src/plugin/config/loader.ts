@@ -8,11 +8,12 @@
  * 3. Project config file
  */
 
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { AntigravityConfigSchema, DEFAULT_CONFIG, type AntigravityConfig } from "./schema";
 import { createLogger } from "../logger";
+import { toast } from "../ui/toast";
 
 const log = createLogger("config");
 
@@ -112,6 +113,15 @@ function mergeConfigs(
 // Main Loader
 // =============================================================================
 
+let _wasConfigCreated = false;
+
+/**
+ * Returns true if a default configuration was created during the last loadConfig call.
+ */
+export function wasConfigCreated(): boolean {
+  return _wasConfigCreated;
+}
+
 /**
  * Load the complete configuration.
  * 
@@ -119,11 +129,33 @@ function mergeConfigs(
  * @returns Fully resolved configuration
  */
 export function loadConfig(directory: string): AntigravityConfig {
+  _wasConfigCreated = false;
+  // Ensure default user config exists
+  const userConfigPath = getUserConfigPath();
+  if (!existsSync(userConfigPath)) {
+    try {
+      const configDir = dirname(userConfigPath);
+      if (!existsSync(configDir)) {
+        mkdirSync(configDir, { recursive: true });
+      }
+      
+      const defaultConfigWithSchema = {
+        $schema: "https://raw.githubusercontent.com/PineappleTwilight/opencode-antigravity-auth/main/assets/antigravity.schema.json",
+        ...DEFAULT_CONFIG
+      };
+      
+      writeFileSync(userConfigPath, JSON.stringify(defaultConfigWithSchema, null, 2), "utf-8");
+      log.info("Created default configuration", { path: userConfigPath });
+      _wasConfigCreated = true;
+    } catch (error) {
+      log.warn("Failed to create default configuration", { error: String(error) });
+    }
+  }
+
   // Start with defaults
   let config: AntigravityConfig = { ...DEFAULT_CONFIG };
 
   // Load user config file (if exists)
-  const userConfigPath = getUserConfigPath();
   const userConfig = loadConfigFile(userConfigPath);
   if (userConfig) {
     config = mergeConfigs(config, userConfig);
