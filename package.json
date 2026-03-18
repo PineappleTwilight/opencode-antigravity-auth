@@ -1,12 +1,12 @@
 {
     "name": "opencode-antigravity-auth-tweaked",
     "version": "1.8.8",
-    "description": "Google Antigravity IDE OAuth auth plugin for Opencode - access Gemini 3 Pro and Claude 4.6 using Google credentials",
+    "description": "Google Antigravity IDE OAuth auth plugin for Opencode",
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts",
     "type": "module",
     "license": "MIT",
-    "author": "noefabris",
+    "author": "noefabris + Branden",
     "repository": {
         "type": "git",
         "url": "git+https://github.com/PineappleTwilight/opencode-antigravity-auth-tweaked.git"
