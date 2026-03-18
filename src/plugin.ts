@@ -968,13 +968,26 @@ function extractRateLimitBodyInfo(body: unknown): RateLimitBodyInfo {
     return { retryDelayMs: null };
   }
 
-  const error = (body as { error?: unknown }).error;
-  const message = error && typeof error === "object" 
-    ? (error as { message?: string }).message 
-    : undefined;
+  // Try to extract error from common response structures
+  let error: unknown = undefined;
+  let directMessage: string | undefined = undefined;
 
-  const details = error && typeof error === "object" 
-    ? (error as { details?: unknown[] }).details 
+  // Pattern 1: { error: { message, details, ... } } - Google API format
+  const errorProp = (body as { error?: unknown }).error;
+  if (errorProp) {
+    error = errorProp;
+  }
+  // Pattern 2: { message: string } - Direct message format
+  else {
+    directMessage = (body as { message?: string }).message;
+  }
+
+  const message = (error && typeof error === "object"
+    ? (error as { message?: string }).message
+    : directMessage) || undefined;
+
+  const details = error && typeof error === "object"
+    ? (error as { details?: unknown[] }).details
     : undefined;
 
   let reason: string | undefined;
@@ -1042,7 +1055,8 @@ async function extractRetryInfoFromBody(response: Response): Promise<RateLimitBo
       const parsed = JSON.parse(text) as unknown;
       return extractRateLimitBodyInfo(parsed);
     } catch {
-      return { retryDelayMs: null };
+      // JSON parsing failed, but text might contain a plain error message
+      return { retryDelayMs: null, message: text.trim() || undefined };
     }
   } catch {
     return { retryDelayMs: null };
