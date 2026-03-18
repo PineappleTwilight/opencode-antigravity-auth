@@ -2098,10 +2098,17 @@ export const createAntigravityPlugin = (providerId: string) => async (
 
                   getHealthTracker().recordRateLimit(account.index);
 
-                  // Define display reason for user feedback (prefer full message for UNKNOWN)
-                  const displayReason = (rateLimitReason === "UNKNOWN" && bodyInfo.message) 
-                    ? bodyInfo.message 
-                    : rateLimitReason;
+                  // Define display reason for user feedback
+                  // Always prefer the actual server message when available, otherwise use the classified reason
+                  let displayReason: string;
+                  if (bodyInfo.message && bodyInfo.message.trim()) {
+                    displayReason = bodyInfo.message;
+                  } else if (rateLimitReason === "UNKNOWN") {
+                    // Only show "UNKNOWN" as a last resort
+                    displayReason = "UNKNOWN";
+                  } else {
+                    displayReason = rateLimitReason;
+                  }
 
                   // ENHANCED RATE LIMIT HANDLING:
                   // Actually wait for the ratelimited amount of time (plus 1-3s random jitter)
