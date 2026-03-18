@@ -348,11 +348,10 @@ export const AntigravityConfigSchema = z.object({
    /**
     * Default retry delay in seconds when API doesn't return a retry-after header.
     * Lower values allow faster retries but may trigger more 429 errors.
-    * 
-    * @default 60
+    *
+    * @default 10
     */
-   default_retry_after_seconds: z.number().min(1).max(300).default(60),
-   
+    default_retry_after_seconds: z.number().min(1).max(300).default(10),   
    /**
     * Maximum backoff delay in seconds for exponential retry.
     * This caps how long the exponential backoff can grow.
@@ -472,7 +471,7 @@ export const DEFAULT_CONFIG: AntigravityConfig = {
   scheduling_mode: 'cache_first',
   max_cache_first_wait_seconds: 60,
   failure_ttl_seconds: 3600,
-  default_retry_after_seconds: 60,
+  default_retry_after_seconds: 10,
   max_backoff_seconds: 60,
   request_jitter_max_ms: 0,
   soft_quota_threshold_percent: 90,

@@ -32,7 +32,7 @@ const RATE_LIMIT_EXCEEDED_BACKOFF = 30_000;
 const MODEL_CAPACITY_EXHAUSTED_BASE_BACKOFF = 45_000;
 const MODEL_CAPACITY_EXHAUSTED_JITTER_MAX = 30_000; // ±15s jitter range
 const SERVER_ERROR_BACKOFF = 20_000;
-const UNKNOWN_BACKOFF = 60_000;
+const UNKNOWN_BACKOFF = 10_000;
 const MIN_BACKOFF_MS = 2_000;
 
 /**
@@ -56,11 +56,10 @@ export function parseRateLimitReason(
 
   // 2. Explicit Reason String
   if (reason) {
-    switch (reason.toUpperCase()) {
-      case "QUOTA_EXHAUSTED": return "QUOTA_EXHAUSTED";
-      case "RATE_LIMIT_EXCEEDED": return "RATE_LIMIT_EXCEEDED";
-      case "MODEL_CAPACITY_EXHAUSTED": return "MODEL_CAPACITY_EXHAUSTED";
-    }
+    const upper = reason.toUpperCase();
+    if (upper === "QUOTA_EXHAUSTED") return "QUOTA_EXHAUSTED";
+    if (upper === "RATE_LIMIT_EXCEEDED" || upper === "RESOURCE_EXHAUSTED") return "RATE_LIMIT_EXCEEDED";
+    if (upper === "MODEL_CAPACITY_EXHAUSTED") return "MODEL_CAPACITY_EXHAUSTED";
   }
   
   // 3. Message Text Scanning (Rust Regex parity)
@@ -68,14 +67,21 @@ export function parseRateLimitReason(
     const lower = message.toLowerCase();
     
     // Capacity / Overloaded (Transient) - Check FIRST before "exhausted"
-    if (lower.includes("capacity") || lower.includes("overloaded") || lower.includes("resource exhausted")) {
+    if (lower.includes("capacity") || lower.includes("overloaded")) {
       return "MODEL_CAPACITY_EXHAUSTED";
     }
 
     // RPM / TPM (Short Wait)
-    // "per minute", "rate limit", "too many requests"
+    // "per minute", "rate limit", "too many requests", "limit reached", "too many"
     // "presque" (French: almost) - retained for i18n parity with Rust reference
-    if (lower.includes("per minute") || lower.includes("rate limit") || lower.includes("too many requests") || lower.includes("presque")) {
+    if (
+      lower.includes("per minute") || 
+      lower.includes("rate limit") || 
+      lower.includes("too many requests") || 
+      lower.includes("limit reached") ||
+      lower.includes("too many") ||
+      lower.includes("presque")
+    ) {
       return "RATE_LIMIT_EXCEEDED";
     }
 
@@ -118,7 +124,7 @@ export function calculateBackoffMs(
       return SERVER_ERROR_BACKOFF; // 20s
     case "UNKNOWN":
     default:
-      return UNKNOWN_BACKOFF; // 60s
+      return UNKNOWN_BACKOFF; // 10s
   }
 }
 

@@ -2084,6 +2084,11 @@ export const createAntigravityPlugin = (providerId: string) => async (
 
                   getHealthTracker().recordRateLimit(account.index);
 
+                  // Define display reason for user feedback (prefer full message for UNKNOWN)
+                  const displayReason = (rateLimitReason === "UNKNOWN" && bodyInfo.message) 
+                    ? bodyInfo.message 
+                    : rateLimitReason;
+
                   // ENHANCED RATE LIMIT HANDLING:
                   // Actually wait for the ratelimited amount of time (plus 1-3s random jitter)
                   // unless the ratelimit is over 60s.
@@ -2097,7 +2102,7 @@ export const createAntigravityPlugin = (providerId: string) => async (
                     pushDebug(`Rate limited (${rateLimitReason}), waiting ${totalWaitMs}ms (${effectiveDelayMs} + ${extraWaitMs} jitter)`);
 
                     await showToast(
-                      `⏳ Rate limited (${rateLimitReason}). Waiting ${waitSec}s to retry same account...`,
+                      `⏳ Rate limited (${displayReason}). Waiting ${waitSec}s to retry same account...`,
                       "warning",
                     );
 
@@ -2115,12 +2120,10 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   }
 
                   // If > 60s or QUOTA_EXHAUSTED, assume quota reached
-                  pushDebug(`Quota reached or long wait (${effectiveDelayMs}ms) for ${accountLabel}. Switching account.`);
-                  await showToast(`Quota reached for ${accountLabel}. Switching account...`, "error");
-
                   accountManager.markRateLimitedWithReason(account, family, headerStyle, model, rateLimitReason, serverRetryMs, config.failure_ttl_seconds * 1000);
-
                   accountManager.requestSaveToDisk();
+
+                  pushDebug(`Quota reached or long wait (${effectiveDelayMs}ms) for ${accountLabel}. Switching or falling back.`);
 
                   // For Gemini, preserve preferred quota across accounts before fallback
                   if (family === "gemini") {
@@ -2128,9 +2131,10 @@ export const createAntigravityPlugin = (providerId: string) => async (
                       // Check if any other account has Antigravity quota for this model
                       if (hasOtherAccountWithAntigravity(account)) {
                         pushDebug(`antigravity exhausted on account ${account.index}, but available on others. Switching account.`);
-                        await showToast(`Rate limited again. Switching account in 5s...`, "warning");
+                        await showToast(`Rate limited (${displayReason}). Switching account in 5s...`, "warning");
                         await sleep(SWITCH_ACCOUNT_DELAY_MS, abortSignal);
                         shouldSwitchAccount = true;
+                        lastFailure = createFailureContext(response);
                         break;
                       }
 
@@ -2177,19 +2181,17 @@ export const createAntigravityPlugin = (providerId: string) => async (
                     }
                   }
 
-                  const quotaName = headerStyle === "antigravity" ? "Antigravity" : "Gemini CLI";
-
                   if (accountCount > 1) {
                     const quotaMsg = bodyInfo.quotaResetTime 
                       ? ` (quota resets ${bodyInfo.quotaResetTime})`
                       : ``;
-                    await showToast(`Rate limited again. Switching account in 5s...${quotaMsg}`, "warning");
+                    await showToast(`Quota reached (${displayReason}) for ${accountLabel}. Switching account in 5s...${quotaMsg}`, "error");
                     await sleep(SWITCH_ACCOUNT_DELAY_MS, abortSignal);
                   } else {
                     // Single account: exponential backoff (1s, 2s, 4s, 8s... max 60s)
                     const expBackoffMs = Math.min(FIRST_RETRY_DELAY_MS * Math.pow(2, attempt - 1), 60000);
                     const expBackoffFormatted = expBackoffMs >= 1000 ? `${Math.round(expBackoffMs / 1000)}s` : `${expBackoffMs}ms`;
-                    await showToast(`Rate limited. Retrying in ${expBackoffFormatted} (attempt ${attempt})...`, "warning");
+                    await showToast(`Quota reached (${displayReason}). Retrying in ${expBackoffFormatted} (attempt ${attempt})...`, "error");
                     await sleep(expBackoffMs, abortSignal);
                   }
 
