@@ -975,7 +975,7 @@ function extractRateLimitBodyInfo(body: unknown, rawBody?: string): RateLimitBod
 
   // Pattern 1: { error: { message, details, ... } } - Google API format
   const errorProp = (body as { error?: unknown }).error;
-  if (errorProp) {
+  if (errorProp && typeof errorProp === "object") {
     error = errorProp;
   }
   // Pattern 2: { message: string } - Direct message format
@@ -1052,6 +1052,12 @@ function extractRateLimitBodyInfo(body: unknown, rawBody?: string): RateLimitBod
 async function extractRetryInfoFromBody(response: Response): Promise<RateLimitBodyInfo> {
   try {
     const text = await response.clone().text();
+    
+    // Handle empty response
+    if (!text || text.trim() === "") {
+      return { retryDelayMs: null, rawBody: text };
+    }
+    
     try {
       let parsed = JSON.parse(text) as unknown;
       
@@ -1063,13 +1069,33 @@ async function extractRetryInfoFromBody(response: Response): Promise<RateLimitBo
       const info = extractRateLimitBodyInfo(parsed);
       // Always include raw body for fallback display
       return { ...info, rawBody: text };
-    } catch {
+    } catch (parseError) {
       // JSON parsing failed, but text might contain a plain error message
+      // Return the raw text as the message
       return { retryDelayMs: null, message: text.trim() || undefined, rawBody: text };
     }
-  } catch {
+  } catch (readError) {
+    // Failed to read response body at all
     return { retryDelayMs: null };
   }
+}
+
+/**
+ * Extract error message from raw response body when structured parsing fails.
+ * Uses regex to find message field in JSON-like content.
+ */
+function extractMessageFromRawBody(rawBody: string): string | undefined {
+  if (!rawBody || rawBody.trim() === "") return undefined;
+  
+  // Try to find "message": "..." pattern in the raw body
+  // This regex handles escaped quotes within the message value
+  const messageMatch = rawBody.match(/"message"\s*:\s*"((?:[^"\\]|\\.)*)"/i);
+  if (messageMatch && messageMatch[1]) {
+    // Unescape JSON string
+    return messageMatch[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+  }
+  
+  return undefined;
 }
 
 function formatWaitTime(ms: number): string {
@@ -2077,8 +2103,14 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   const bodyInfo = await extractRetryInfoFromBody(response);
                   const serverRetryMs = bodyInfo.retryDelayMs ?? headerRetryMs;
 
+                  // Extract message from raw body if structured extraction failed
+                  // This ensures we can still classify the error correctly
+                  const messageForClassification = bodyInfo.message 
+                    || extractMessageFromRawBody(bodyInfo.rawBody || "")
+                    || undefined;
+
                   // [Enhanced Parsing] Pass status to handling logic
-                  const rateLimitReason = parseRateLimitReason(bodyInfo.reason, bodyInfo.message, response.status);
+                  const rateLimitReason = parseRateLimitReason(bodyInfo.reason, messageForClassification, response.status);
 
                   // Calculate backoff/wait time
                   const quotaKey = headerStyleToQuotaKey(headerStyle, family);
@@ -2109,15 +2141,20 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   getHealthTracker().recordRateLimit(account.index);
 
                   // Define display reason for user feedback
-                  // Never show "UNKNOWN" - show the full response body or "NO_BODY" instead
+                  // Never show "UNKNOWN" - show the actual server message or "NO_BODY" instead
                   let displayReason: string;
                   if (bodyInfo.message && bodyInfo.message.trim()) {
                     displayReason = bodyInfo.message;
-                  } else if (bodyInfo.rawBody && bodyInfo.rawBody.trim()) {
-                    // Show the full raw response body when parsing failed or no structured message found
-                    displayReason = bodyInfo.rawBody;
                   } else {
-                    displayReason = "NO_BODY";
+                    // Try to extract a message from raw body as a last resort
+                    const extractedMessage = extractMessageFromRawBody(bodyInfo.rawBody || "");
+                    if (extractedMessage && extractedMessage.trim()) {
+                      displayReason = extractedMessage;
+                    } else if (bodyInfo.rawBody && bodyInfo.rawBody.trim()) {
+                      displayReason = bodyInfo.rawBody;
+                    } else {
+                      displayReason = "NO_BODY";
+                    }
                   }
 
                   // ENHANCED RATE LIMIT HANDLING:
