@@ -2222,15 +2222,23 @@ export const createAntigravityPlugin = (providerId: string) => async (
                     await showToast(toastMsg, "error");
                     await sleep(SWITCH_ACCOUNT_DELAY_MS, abortSignal);
                   } else {
-                    // Single account: exponential backoff (1s, 2s, 4s, 8s... max 60s)
-                    const expBackoffMs = Math.min(FIRST_RETRY_DELAY_MS * Math.pow(2, attempt - 1), 60000);
-                    const expBackoffFormatted = expBackoffMs >= 1000 ? `${Math.round(expBackoffMs / 1000)}s` : `${expBackoffMs}ms`;
-                    // For quota exhausted, show a shorter, clearer message
-                    const toastMsg = rateLimitReason === "QUOTA_EXHAUSTED"
-                      ? `Quota exhausted${bodyInfo.quotaResetTime ? ` (resets ${bodyInfo.quotaResetTime})` : ``}. Retrying in ${expBackoffFormatted} (attempt ${attempt})...`
-                      : `Quota reached (${displayReason}). Retrying in ${expBackoffFormatted} (attempt ${attempt})...`;
-                    await showToast(toastMsg, "error");
-                    await sleep(expBackoffMs, abortSignal);
+                    // Single account handling
+                    if (rateLimitReason === "QUOTA_EXHAUSTED") {
+                      // Quota exhausted - retrying won't help, tell user to wait or add another account
+                      const quotaMsg = bodyInfo.quotaResetTime
+                        ? ` (quota resets ${bodyInfo.quotaResetTime})`
+                        : ``;
+                      await showToast(`Quota exhausted${quotaMsg}. Add another account or wait until quota resets.`, "error");
+                      // Don't retry - just fail and let the user handle it
+                      lastFailure = createFailureContext(response);
+                      break;
+                    } else {
+                      // Other errors - use exponential backoff (1s, 2s, 4s, 8s... max 60s)
+                      const expBackoffMs = Math.min(FIRST_RETRY_DELAY_MS * Math.pow(2, attempt - 1), 60000);
+                      const expBackoffFormatted = expBackoffMs >= 1000 ? `${Math.round(expBackoffMs / 1000)}s` : `${expBackoffMs}ms`;
+                      await showToast(`Quota reached (${displayReason}). Retrying in ${expBackoffFormatted} (attempt ${attempt})...`, "error");
+                      await sleep(expBackoffMs, abortSignal);
+                    }
                   }
 
                   lastFailure = createFailureContext(response);
