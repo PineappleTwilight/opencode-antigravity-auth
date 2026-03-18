@@ -9,7 +9,7 @@ describe("GEMINI_CLI_HEADERS", () => {
   it("matches Code Assist headers from opencode-gemini-auth", () => {
     expect(GEMINI_CLI_HEADERS).toEqual({
       "User-Agent": "google-api-nodejs-client/9.15.1",
-      "X-Goog-Api-Client": "gl-node/22.17.0",
+      "X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
       "Client-Metadata": "ideType=IDE_UNSPECIFIED,platform=PLATFORM_UNSPECIFIED,pluginType=GEMINI",
     })
   })
@@ -21,7 +21,7 @@ describe("getRandomizedHeaders", () => {
       const headers = getRandomizedHeaders("gemini-cli", "gemini-2.5-pro")
       expect(headers).toEqual({
         "User-Agent": "google-api-nodejs-client/9.15.1",
-        "X-Goog-Api-Client": "gl-node/22.17.0",
+        "X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
         "Client-Metadata": "ideType=IDE_UNSPECIFIED,platform=PLATFORM_UNSPECIFIED,pluginType=GEMINI",
       })
     })

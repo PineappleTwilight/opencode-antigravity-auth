@@ -1239,7 +1239,7 @@ describe("AccountManager", () => {
       });
 
       it("returns default backoff for UNKNOWN", () => {
-        expect(calculateBackoffMs("UNKNOWN", 0)).toBe(60_000);
+        expect(calculateBackoffMs("UNKNOWN", 0)).toBe(10_000);
       });
     });
 

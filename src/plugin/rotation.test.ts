@@ -290,10 +290,10 @@ describe("TokenBucketTracker", () => {
 
     it("defaults to cost of 1", () => {
       const tracker = new TokenBucketTracker({ initialTokens: 1 });
-      expect(tracker.hasTokens(0)).toBe(true);
-      
+      expect(tracker.hasTokens(0, 1)).toBe(true);
+
       tracker.consume(0, 1);
-      expect(tracker.hasTokens(0)).toBe(false);
+      expect(tracker.hasTokens(0, 1)).toBe(false);
     });
   });
 
@@ -521,9 +521,9 @@ describe("selectHybridAccount", () => {
   });
 
   it("filters out accounts without tokens", () => {
-    const tokenTracker = new TokenBucketTracker({ initialTokens: 1 });
-    tokenTracker.consume(0, 1);
-    
+    const tokenTracker = new TokenBucketTracker({ initialTokens: 10 });
+    tokenTracker.consume(0, 10);  // Account 0 now has 0 tokens
+
     const accounts: AccountWithMetrics[] = [
       { index: 0, lastUsed: 0, healthScore: 70, isRateLimited: false, isCoolingDown: false },
       { index: 1, lastUsed: 0, healthScore: 70, isRateLimited: false, isCoolingDown: false },
