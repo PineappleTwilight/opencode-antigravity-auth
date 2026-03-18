@@ -65,8 +65,17 @@ export function parseRateLimitReason(
   // 3. Message Text Scanning (Rust Regex parity)
   if (message) {
     const lower = message.toLowerCase();
-    
-    // Capacity / Overloaded (Transient) - Check FIRST before "exhausted"
+
+    // Quota (Long Wait) - Check FIRST, before capacity/exhausted combinations
+    // "exhausted your capacity", "quota exhausted", etc. are quota issues, not transient capacity
+    if (lower.includes("exhausted")) {
+      return "QUOTA_EXHAUSTED";
+    }
+    if (lower.includes("quota")) {
+      return "QUOTA_EXHAUSTED";
+    }
+
+    // Capacity / Overloaded (Transient) - Pure capacity issues without "exhausted"
     if (lower.includes("capacity") || lower.includes("overloaded")) {
       return "MODEL_CAPACITY_EXHAUSTED";
     }
@@ -75,19 +84,14 @@ export function parseRateLimitReason(
     // "per minute", "rate limit", "too many requests", "limit reached", "too many"
     // "presque" (French: almost) - retained for i18n parity with Rust reference
     if (
-      lower.includes("per minute") || 
-      lower.includes("rate limit") || 
-      lower.includes("too many requests") || 
+      lower.includes("per minute") ||
+      lower.includes("rate limit") ||
+      lower.includes("too many requests") ||
       lower.includes("limit reached") ||
       lower.includes("too many") ||
       lower.includes("presque")
     ) {
       return "RATE_LIMIT_EXCEEDED";
-    }
-
-    // Quota (Long Wait)
-    if (lower.includes("exhausted") || lower.includes("quota")) {
-      return "QUOTA_EXHAUSTED";
     }
   }
   

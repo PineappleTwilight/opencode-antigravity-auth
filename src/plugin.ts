@@ -1053,7 +1053,13 @@ async function extractRetryInfoFromBody(response: Response): Promise<RateLimitBo
   try {
     const text = await response.clone().text();
     try {
-      const parsed = JSON.parse(text) as unknown;
+      let parsed = JSON.parse(text) as unknown;
+      
+      // Handle case where response is wrapped in an array (SSE stream or batched response)
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        parsed = parsed[0];
+      }
+      
       const info = extractRateLimitBodyInfo(parsed);
       // Always include raw body for fallback display
       return { ...info, rawBody: text };
