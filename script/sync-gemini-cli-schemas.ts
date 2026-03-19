@@ -3,6 +3,7 @@ import path from "node:path";
 
 /**
  * Syncs request/response schemas from gemini-cli to our project.
+ * Generated at build time and placed in src/generated/schemas.ts.
  */
 function syncSchemas() {
   const geminiCliCorePath = "gemini-cli/packages/core";
@@ -34,7 +35,7 @@ function syncSchemas() {
  * SPDX-License-Identifier: Apache-2.0
  */
 
-// AUTO-GENERATED FROM gemini-cli/packages/core/src/code_assist/converter.ts
+// AUTO-GENERATED FROM gemini-cli.
 // DO NOT EDIT MANUALLY. Run 'npm run prebuild' to update.
 
 import type { 
@@ -65,7 +66,6 @@ import type {
         output += (match[0].startsWith("export") ? "" : "export ") + match[0] + "\n\n";
       }
     } else {
-      // Improved regex to handle indentation and closing brace properly
       const regex = new RegExp(`(?:export\\s+)?interface\\s+${schema.name}\\s*{([\\s\\S]*?)^}`, "m");
       match = schema.source.match(regex);
       if (match) {
@@ -74,7 +74,12 @@ import type {
     }
   }
 
-  const outputPath = "src/plugin/gemini-cli-schemas.ts";
+  const outputDir = "src/generated";
+  if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(outputDir, { recursive: true });
+  }
+
+  const outputPath = path.join(outputDir, "schemas.ts");
   fs.writeFileSync(outputPath, output);
   console.log(`Synced LLM schemas to ${outputPath}`);
 }

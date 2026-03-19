@@ -214,6 +214,8 @@ async function fetchAvailableModels(
   throw new Error(errors.join("; ") || "fetchAvailableModels failed");
 }
 
+import { GEMINI_CLI_VERSION } from "../generated/headers.js";
+
 async function fetchGeminiCliQuota(
   accessToken: string,
   projectId: string,
@@ -222,7 +224,7 @@ async function fetchGeminiCliQuota(
   // Use Gemini CLI user-agent to get CLI quota buckets (not Antigravity buckets)
   const platform = process.platform || "darwin";
   const arch = process.arch || "arm64";
-  const geminiCliUserAgent = `GeminiCLI/0.36.0-nightly.20260317.2f90b4653/gemini-2.5-pro (${platform}; ${arch})`;
+  const geminiCliUserAgent = `GeminiCLI/${GEMINI_CLI_VERSION}/gemini-2.5-pro (${platform}; ${arch})`;
 
   const body = projectId ? { project: projectId } : {};
   

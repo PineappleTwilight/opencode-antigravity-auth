@@ -104,11 +104,8 @@ export const ANTIGRAVITY_HEADERS = {
   "Client-Metadata": `{"ideType":"ANTIGRAVITY","platform":"${process.platform === "win32" ? "WINDOWS" : "MACOS"}","pluginType":"GEMINI"}`,
 } as const;
 
-export const GEMINI_CLI_HEADERS = {
-  "User-Agent": "GeminiCLI/0.36.0-nightly.20260317.2f90b4653/gemini-2.5-pro (linux; x64; terminal)",
-  "X-Goog-Api-Client": "gl-node/20.20.1",
-  "Client-Metadata": "ideType=GEMINI_CLI,platform=LINUX_X64,pluginType=GEMINI",
-} as const;
+import { GEMINI_CLI_HEADERS } from "./generated/headers.js";
+export { GEMINI_CLI_HEADERS };
 
 const ANTIGRAVITY_PLATFORMS = ["windows/amd64", "darwin/arm64", "darwin/amd64"] as const;
 
@@ -132,7 +129,8 @@ export function getRandomizedHeaders(style: HeaderStyle, model?: string): Header
   if (style === "gemini-cli") {
     const ua = GEMINI_CLI_HEADERS["User-Agent"];
     const requestedModel = model || "gemini-2.0-flash";
-    // Replace the placeholder model (synced as gemini-2.5-pro) with the actual model
+    
+    // Use the synced model as a marker for replacement (it's synced as gemini-2.5-pro by default)
     const finalUa = ua.replace("/gemini-2.5-pro ", `/${requestedModel} `);
     
     return {

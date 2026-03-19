@@ -7,31 +7,25 @@ import {
 
 describe("GEMINI_CLI_HEADERS", () => {
   it("matches Code Assist headers from opencode-gemini-auth", () => {
-    expect(GEMINI_CLI_HEADERS).toEqual({
-      "User-Agent": "GeminiCLI/0.36.0-nightly.20260317.2f90b4653/gemini-2.5-pro (linux; x64; terminal)",
-      "X-Goog-Api-Client": "gl-node/20.20.1",
-      "Client-Metadata": "ideType=GEMINI_CLI,platform=LINUX_X64,pluginType=GEMINI",
-    })
+    // These are now generated, but we can verify their shape
+    expect(GEMINI_CLI_HEADERS["User-Agent"]).toMatch(/^GeminiCLI\//)
+    expect(GEMINI_CLI_HEADERS["X-Goog-Api-Client"]).toMatch(/^gl-node\//)
+    expect(GEMINI_CLI_HEADERS["Client-Metadata"]).toContain("ideType=GEMINI_CLI")
   })
 })
 
 describe("getRandomizedHeaders", () => {
   describe("gemini-cli style", () => {
-    it("returns static Code Assist headers", () => {
+    it("returns static Code Assist headers with dynamic model", () => {
       const headers = getRandomizedHeaders("gemini-cli", "gemini-2.5-pro")
-      expect(headers).toEqual({
-        "User-Agent": "GeminiCLI/0.36.0-nightly.20260317.2f90b4653/gemini-2.5-pro (linux; x64; terminal)",
-        "X-Goog-Api-Client": "gl-node/20.20.1",
-        "Client-Metadata": "ideType=GEMINI_CLI,platform=LINUX_X64,pluginType=GEMINI",
-      })
+      expect(headers["User-Agent"]).toContain("/gemini-2.5-pro ")
+      expect(headers["X-Goog-Api-Client"]).toBe(GEMINI_CLI_HEADERS["X-Goog-Api-Client"])
+      expect(headers["Client-Metadata"]).toBe(GEMINI_CLI_HEADERS["Client-Metadata"])
     })
 
     it("injects requested model into User-Agent", () => {
       const headers = getRandomizedHeaders("gemini-cli", "gemini-3-pro-preview")
-      const version = GEMINI_CLI_HEADERS["User-Agent"].split("/")[1]
-      const platform = process.platform === "win32" ? "windows" : "linux"
-      const arch = process.arch === "x64" ? "x64" : "arm64"
-      expect(headers["User-Agent"]).toBe(`GeminiCLI/${version}/gemini-3-pro-preview (${platform}; ${arch}; terminal)`)
+      expect(headers["User-Agent"]).toContain("/gemini-3-pro-preview ")
     })
   })
 
