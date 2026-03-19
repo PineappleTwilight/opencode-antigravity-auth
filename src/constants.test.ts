@@ -8,7 +8,7 @@ import {
 describe("GEMINI_CLI_HEADERS", () => {
   it("matches Code Assist headers from opencode-gemini-auth", () => {
     expect(GEMINI_CLI_HEADERS).toEqual({
-      "User-Agent": "GeminiCLI/0.35.0-nightly.20260313.bb060d7a9/gemini-2.5-pro (linux; x64; terminal)",
+      "User-Agent": "GeminiCLI/0.36.0-nightly.20260317.2f90b4653/gemini-2.5-pro (linux; x64; terminal)",
       "X-Goog-Api-Client": "gl-node/20.20.1",
       "Client-Metadata": "ideType=GEMINI_CLI,platform=LINUX_X64,pluginType=GEMINI",
     })
@@ -20,7 +20,7 @@ describe("getRandomizedHeaders", () => {
     it("returns static Code Assist headers", () => {
       const headers = getRandomizedHeaders("gemini-cli", "gemini-2.5-pro")
       expect(headers).toEqual({
-        "User-Agent": "GeminiCLI/0.35.0-nightly.20260313.bb060d7a9/gemini-2.5-pro (linux; x64; terminal)",
+        "User-Agent": "GeminiCLI/0.36.0-nightly.20260317.2f90b4653/gemini-2.5-pro (linux; x64; terminal)",
         "X-Goog-Api-Client": "gl-node/20.20.1",
         "Client-Metadata": "ideType=GEMINI_CLI,platform=LINUX_X64,pluginType=GEMINI",
       })

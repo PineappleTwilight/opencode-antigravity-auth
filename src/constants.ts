@@ -105,7 +105,7 @@ export const ANTIGRAVITY_HEADERS = {
 } as const;
 
 export const GEMINI_CLI_HEADERS = {
-  "User-Agent": "GeminiCLI/0.35.0-nightly.20260313.bb060d7a9/gemini-2.5-pro (linux; x64; terminal)",
+  "User-Agent": "GeminiCLI/0.36.0-nightly.20260317.2f90b4653/gemini-2.5-pro (linux; x64; terminal)",
   "X-Goog-Api-Client": "gl-node/20.20.1",
   "Client-Metadata": "ideType=GEMINI_CLI,platform=LINUX_X64,pluginType=GEMINI",
 } as const;
