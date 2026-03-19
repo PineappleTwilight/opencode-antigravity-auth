@@ -34,7 +34,7 @@
         "LICENSE"
     ],
     "scripts": {
-        "prebuild": "npx tsx script/sync-gemini-cli-headers.ts",
+        "prebuild": "cd gemini-cli && (git pull || echo 'Warning: Could not pull latest gemini-cli') && cd .. && npx tsx script/sync-gemini-cli-headers.ts && npx tsx script/sync-gemini-cli-schemas.ts",
         "build": "tsc -p tsconfig.build.json",
         "build:schema": "npx tsx script/build-schema.ts",
         "typecheck": "tsc --noEmit",
