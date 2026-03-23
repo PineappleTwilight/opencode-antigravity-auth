@@ -4,50 +4,50 @@ import {
   ANTIGRAVITY_LOAD_ENDPOINTS,
   ANTIGRAVITY_DEFAULT_PROJECT_ID,
   GEMINI_CLI_HEADERS,
-} from "../constants";
-import { formatRefreshParts, parseRefreshParts } from "./auth";
-import { createLogger } from "./logger";
-import { toast } from "./ui/toast";
-import type { OAuthAuthDetails, ProjectContextResult } from "./types";
+} from "../constants.ts"
+import { formatRefreshParts, parseRefreshParts } from "./auth.ts"
+import { createLogger } from "./logger.ts"
+import { toast } from "./ui/toast.ts"
+import type { OAuthAuthDetails, ProjectContextResult } from "./types.ts"
 
-const log = createLogger("project");
+const log = createLogger("project")
 
-const projectContextResultCache = new Map<string, ProjectContextResult>();
-const projectContextPendingCache = new Map<string, Promise<ProjectContextResult>>();
+const projectContextResultCache = new Map<string, ProjectContextResult>()
+const projectContextPendingCache = new Map<string, Promise<ProjectContextResult>>()
 
 const CODE_ASSIST_METADATA = {
   ideType: "ANTIGRAVITY",
   platform: process.platform === "win32" ? "WINDOWS" : "MACOS",
   pluginType: "GEMINI",
-} as const;
+} as const
 
 interface AntigravityUserTier {
-  id?: string;
-  isDefault?: boolean;
-  userDefinedCloudaicompanionProject?: boolean;
+  id?: string
+  isDefault?: boolean
+  userDefinedCloudaicompanionProject?: boolean
 }
 
 interface LoadCodeAssistPayload {
-  cloudaicompanionProject?: string | { id?: string };
+  cloudaicompanionProject?: string | { id?: string }
   currentTier?: {
-    id?: string;
-  };
-  allowedTiers?: AntigravityUserTier[];
+    id?: string
+  }
+  allowedTiers?: AntigravityUserTier[]
 }
 
 interface OnboardUserPayload {
-  name?: string;
-  done?: boolean;
+  name?: string
+  done?: boolean
   error?: {
-    message: string;
-    code: number;
-    details?: any[];
-  };
+    message: string
+    code: number
+    details?: any[]
+  }
   response?: {
     cloudaicompanionProject?: {
-      id?: string;
-    };
-  };
+      id?: string
+    }
+  }
 }
 
 /**
@@ -61,11 +61,11 @@ function isValidationRequired(data: any): { required: boolean; url?: string; mes
           required: true, 
           url: detail.metadata?.validation_url || detail.metadata?.verify_url,
           message: data.error.message 
-        };
+        }
       }
     }
   }
-  return { required: false };
+  return { required: false }
 }
 
 /**
@@ -81,36 +81,36 @@ async function pollOperation(
   const headers = {
     Authorization: `Bearer ${accessToken}`,
     ...getAntigravityHeaders(),
-  };
+  }
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout for polling
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 10000)// 10s timeout for polling
     
     try {
       const response = await fetch(`${baseEndpoint}/v1/${operationName}`, {
         headers,
         signal: controller.signal,
-      });
+      })
 
       if (!response.ok) {
-        log.debug("Operation polling failed", { status: response.status, operationName });
-        break;
+        log.debug("Operation polling failed", { status: response.status, operationName })
+        break
       }
 
-      const payload = (await response.json()) as OnboardUserPayload;
+      const payload = (await response.json()) as OnboardUserPayload
       if (payload.done) {
-        return payload;
+        return payload
       }
     } catch (error) {
-      log.debug("Error polling operation", { error: String(error), operationName });
-      break;
+      log.debug("Error polling operation", { error: String(error), operationName })
+      break
     } finally {
-      clearTimeout(timeoutId);
+      clearTimeout(timeoutId)
     }
-    await wait(delayMs);
+    await wait(delayMs)
   }
-  return null;
+  return null
 }
 
 function buildMetadata(projectId?: string): Record<string, string> {
@@ -118,11 +118,11 @@ function buildMetadata(projectId?: string): Record<string, string> {
     ideType: CODE_ASSIST_METADATA.ideType,
     platform: CODE_ASSIST_METADATA.platform,
     pluginType: CODE_ASSIST_METADATA.pluginType,
-  };
-  if (projectId) {
-    metadata.duetProject = projectId;
   }
-  return metadata;
+  if (projectId) {
+    metadata.duetProject = projectId
+  }
+  return metadata
 }
 
 /**
@@ -130,14 +130,14 @@ function buildMetadata(projectId?: string): Record<string, string> {
  */
 export function getDefaultTierId(allowedTiers?: AntigravityUserTier[]): string | undefined {
   if (!allowedTiers || allowedTiers.length === 0) {
-    return undefined;
+    return undefined
   }
   for (const tier of allowedTiers) {
     if (tier?.isDefault) {
-      return tier.id;
+      return tier.id
     }
   }
-  return allowedTiers[0]?.id;
+  return allowedTiers[0]?.id
 }
 
 /**
@@ -145,8 +145,8 @@ export function getDefaultTierId(allowedTiers?: AntigravityUserTier[]): string |
  */
 function wait(ms: number): Promise<void> {
   return new Promise(function (resolve) {
-    setTimeout(resolve, ms);
-  });
+    setTimeout(resolve, ms)
+  })
 }
 
 /**
@@ -154,23 +154,23 @@ function wait(ms: number): Promise<void> {
  */
 export function extractManagedProjectId(payload: LoadCodeAssistPayload | null): string | undefined {
   if (!payload) {
-    return undefined;
+    return undefined
   }
   if (typeof payload.cloudaicompanionProject === "string") {
-    return payload.cloudaicompanionProject;
+    return payload.cloudaicompanionProject
   }
   if (payload.cloudaicompanionProject && typeof payload.cloudaicompanionProject.id === "string") {
-    return payload.cloudaicompanionProject.id;
+    return payload.cloudaicompanionProject.id
   }
-  return undefined;
+  return undefined
 }
 
 /**
  * Generates a cache key for project context based on refresh token.
  */
 function getCacheKey(auth: OAuthAuthDetails): string | undefined {
-  const refresh = auth.refresh?.trim();
-  return refresh ? refresh : undefined;
+  const refresh = auth.refresh?.trim()
+  return refresh ? refresh : undefined
 }
 
 /**
@@ -178,12 +178,12 @@ function getCacheKey(auth: OAuthAuthDetails): string | undefined {
  */
 export function invalidateProjectContextCache(refresh?: string): void {
   if (!refresh) {
-    projectContextPendingCache.clear();
-    projectContextResultCache.clear();
-    return;
+    projectContextPendingCache.clear()
+    projectContextResultCache.clear()
+    return
   }
-  projectContextPendingCache.delete(refresh);
-  projectContextResultCache.delete(refresh);
+  projectContextPendingCache.delete(refresh)
+  projectContextResultCache.delete(refresh)
 }
 
 /**
@@ -196,9 +196,9 @@ export async function loadManagedProject(
 ): Promise<LoadCodeAssistPayload | null> {
   const metadata = useCliStyle 
     ? { ideType: "IDE_UNSPECIFIED", platform: "PLATFORM_UNSPECIFIED", pluginType: "GEMINI" }
-    : buildMetadata(projectId);
+    : buildMetadata(projectId)
     
-  const requestBody: Record<string, unknown> = { metadata };
+  const requestBody: Record<string, unknown> = { metadata }
 
   const loadHeaders: Record<string, string> = {
     "Content-Type": "application/json",
@@ -208,15 +208,15 @@ export async function loadManagedProject(
       "X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
       "Client-Metadata": getAntigravityHeaders()["Client-Metadata"],
     }),
-  };
+  }
 
   const loadEndpoints = Array.from(
     new Set<string>([...ANTIGRAVITY_LOAD_ENDPOINTS, ...ANTIGRAVITY_ENDPOINT_FALLBACKS]),
-  );
+  )
 
   for (const baseEndpoint of loadEndpoints) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout for load
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 10000)// 10s timeout for load
     
     try {
       const response = await fetch(
@@ -227,22 +227,22 @@ export async function loadManagedProject(
           body: JSON.stringify(requestBody),
           signal: controller.signal,
         },
-      );
+      )
 
       if (!response.ok) {
-        continue;
+        continue
       }
 
-      return (await response.json()) as LoadCodeAssistPayload;
+      return (await response.json()) as LoadCodeAssistPayload
     } catch (error) {
-      log.debug("Failed to load managed project", { endpoint: baseEndpoint, error: String(error) });
-      continue;
+      log.debug("Failed to load managed project", { endpoint: baseEndpoint, error: String(error) })
+      continue
     } finally {
-      clearTimeout(timeoutId);
+      clearTimeout(timeoutId)
     }
   }
 
-  return null;
+  return null
 }
 
 
@@ -257,16 +257,16 @@ export async function onboardManagedProject(
 ): Promise<string | undefined> {
   const metadata = useCliStyle 
     ? { ideType: "IDE_UNSPECIFIED", platform: "PLATFORM_UNSPECIFIED", pluginType: "GEMINI" }
-    : buildMetadata(projectId);
+    : buildMetadata(projectId)
 
   const requestBody: Record<string, unknown> = {
     tierId,
     metadata,
-  };
+  }
 
   const endpoints = Array.from(
     new Set<string>([...ANTIGRAVITY_LOAD_ENDPOINTS, ...ANTIGRAVITY_ENDPOINT_FALLBACKS]),
-  );
+  )
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -276,14 +276,14 @@ export async function onboardManagedProject(
       "X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
       "Client-Metadata": getAntigravityHeaders()["Client-Metadata"],
     }),
-  };
+  }
 
   for (const baseEndpoint of endpoints) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout for onboard
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 10000)// 10s timeout for onboard
     
     try {
-      log.debug("Attempting onboarding at endpoint", { baseEndpoint, useCliStyle });
+      log.debug("Attempting onboarding at endpoint", { baseEndpoint, useCliStyle })
       const response = await fetch(
         `${baseEndpoint}/v1internal:onboardUser`,
         {
@@ -292,105 +292,105 @@ export async function onboardManagedProject(
           body: JSON.stringify(requestBody),
           signal: controller.signal,
         },
-      );
+      )
 
       if (!response.ok) {
-        const errorText = await response.text().catch(() => "Unknown error");
-        let errorData: any = {};
+        const errorText = await response.text().catch(() => "Unknown error")
+        let errorData: any = {}
         try {
-          errorData = JSON.parse(errorText);
+          errorData = JSON.parse(errorText)
         } catch {
           // not json
         }
 
-        const validation = isValidationRequired(errorData);
+        const validation = isValidationRequired(errorData)
         if (validation.required) {
-          console.log(`\nAccount validation required: ${validation.message || "Please visit the URL below"}`);
+          console.log(`\nAccount validation required: ${validation.message || "Please visit the URL below"}`)
           if (validation.url) {
-            console.log(`URL: ${validation.url}\n`);
+            console.log(`URL: ${validation.url}\n`)
           }
-          log.warn("Onboarding requires account validation", { url: validation.url });
+          log.warn("Onboarding requires account validation", { url: validation.url })
           toast.warn("Account validation required", {
             title: "Antigravity",
             message: validation.message || "Google requires you to validate your account in a browser.",
             force: true,
-          });
+          })
         } else {
           log.debug("Onboarding request failed", { 
             status: response.status, 
             endpoint: baseEndpoint,
             error: errorText 
-          });
+          })
         }
-        continue;
+        continue
       }
 
-      let payload = (await response.json()) as OnboardUserPayload;
+      let payload = (await response.json()) as OnboardUserPayload
       
       // Handle long-running operations via polling
       if (!payload.done && payload.name) {
-        log.debug("Onboarding started, polling operation", { name: payload.name });
-        const result = await pollOperation(accessToken, baseEndpoint, payload.name);
+        log.debug("Onboarding started, polling operation", { name: payload.name })
+        const result = await pollOperation(accessToken, baseEndpoint, payload.name)
         if (result) {
-          payload = result;
+          payload = result
         }
       }
 
-      const managedProjectId = payload.response?.cloudaicompanionProject?.id;
+      const managedProjectId = payload.response?.cloudaicompanionProject?.id
       if (payload.done && managedProjectId) {
-        return managedProjectId;
+        return managedProjectId
       }
       if (payload.done && projectId) {
-        return projectId;
+        return projectId
       }
     } catch (error) {
-      log.debug("Failed to onboard managed project", { endpoint: baseEndpoint, error: String(error) });
-      continue;
+      log.debug("Failed to onboard managed project", { endpoint: baseEndpoint, error: String(error) })
+      continue
     } finally {
-      clearTimeout(timeoutId);
+      clearTimeout(timeoutId)
     }
   }
 
-  return undefined;
+  return undefined
 }
 
 /**
  * Resolves an effective project ID for the current auth state, caching results per refresh token.
  */
 export async function ensureProjectContext(auth: OAuthAuthDetails): Promise<ProjectContextResult> {
-  const envProjectId = process.env.GOOGLE_CLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT_ID;
+  const envProjectId = process.env.GOOGLE_CLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT_ID
   
-  const accessToken = auth.access;
+  const accessToken = auth.access
   if (!accessToken) {
-    return { auth, effectiveProjectId: envProjectId || "" };
+    return { auth, effectiveProjectId: envProjectId || "" }
   }
 
-  const cacheKey = getCacheKey(auth);
+  const cacheKey = getCacheKey(auth)
   if (cacheKey) {
-    const cached = projectContextResultCache.get(cacheKey);
+    const cached = projectContextResultCache.get(cacheKey)
     if (cached) {
-      return cached;
+      return cached
     }
-    const pending = projectContextPendingCache.get(cacheKey);
+    const pending = projectContextPendingCache.get(cacheKey)
     if (pending) {
-      return pending;
+      return pending
     }
   }
 
   const resolveContext = async (): Promise<ProjectContextResult> => {
-    const parts = parseRefreshParts(auth.refresh);
+    const parts = parseRefreshParts(auth.refresh)
     
     // Environment variable takes highest precedence (matching Gemini CLI)
     if (envProjectId) {
-      log.debug("Using project ID from environment", { envProjectId });
-      return { auth, effectiveProjectId: envProjectId };
+      log.debug("Using project ID from environment", { envProjectId })
+      return { auth, effectiveProjectId: envProjectId }
     }
 
     if (parts.managedProjectId) {
-      return { auth, effectiveProjectId: parts.managedProjectId };
+      return { auth, effectiveProjectId: parts.managedProjectId }
     }
 
-    const fallbackProjectId = ANTIGRAVITY_DEFAULT_PROJECT_ID;
+    const fallbackProjectId = ANTIGRAVITY_DEFAULT_PROJECT_ID
     const persistManagedProject = async (managedProjectId: string): Promise<ProjectContextResult> => {
       const updatedAuth: OAuthAuthDetails = {
         ...auth,
@@ -399,98 +399,98 @@ export async function ensureProjectContext(auth: OAuthAuthDetails): Promise<Proj
           projectId: parts.projectId,
           managedProjectId,
         }),
-      };
+      }
 
-      return { auth: updatedAuth, effectiveProjectId: managedProjectId };
-    };
+      return { auth: updatedAuth, effectiveProjectId: managedProjectId }
+    }
 
     // Try to resolve a managed project from Antigravity if possible.
-    const loadPayload = await loadManagedProject(accessToken, parts.projectId ?? fallbackProjectId);
-    let resolvedManagedProjectId = extractManagedProjectId(loadPayload);
+    const loadPayload = await loadManagedProject(accessToken, parts.projectId ?? fallbackProjectId)
+    let resolvedManagedProjectId = extractManagedProjectId(loadPayload)
 
     if (resolvedManagedProjectId) {
-      return persistManagedProject(resolvedManagedProjectId);
+      return persistManagedProject(resolvedManagedProjectId)
     }
 
     // Try CLI-style load as a fallback
-    log.debug("Antigravity load failed, attempting CLI load fallback", { projectId: parts.projectId });
+    log.debug("Antigravity load failed, attempting CLI load fallback", { projectId: parts.projectId })
     const cliLoadPayload = await loadManagedProject(
       accessToken,
       parts.projectId ?? fallbackProjectId,
       true // useCliStyle
-    );
-    resolvedManagedProjectId = extractManagedProjectId(cliLoadPayload);
+    )
+    resolvedManagedProjectId = extractManagedProjectId(cliLoadPayload)
 
     if (resolvedManagedProjectId) {
-      log.debug("Successfully resolved managed project via CLI load fallback", { resolvedManagedProjectId });
-      return persistManagedProject(resolvedManagedProjectId);
+      log.debug("Successfully resolved managed project via CLI load fallback", { resolvedManagedProjectId })
+      return persistManagedProject(resolvedManagedProjectId)
     }
 
     // No managed project found - try to auto-provision one via onboarding.
     // Use the allowed tiers from whichever load response we got (preferring Antigravity)
-    const tierId = getDefaultTierId(loadPayload?.allowedTiers || cliLoadPayload?.allowedTiers) ?? "FREE";
-    log.debug("Auto-provisioning managed project", { tierId, projectId: parts.projectId });
+    const tierId = getDefaultTierId(loadPayload?.allowedTiers || cliLoadPayload?.allowedTiers) ?? "FREE"
+    log.debug("Auto-provisioning managed project", { tierId, projectId: parts.projectId })
     
     const provisionedProjectId = await onboardManagedProject(
       accessToken,
       tierId,
       parts.projectId,
-    );
+    )
 
     if (provisionedProjectId) {
-      log.debug("Successfully provisioned managed project", { provisionedProjectId });
-      return persistManagedProject(provisionedProjectId);
+      log.debug("Successfully provisioned managed project", { provisionedProjectId })
+      return persistManagedProject(provisionedProjectId)
     }
 
     // Try CLI-style onboarding as a fallback
-    log.debug("Antigravity provisioning failed, attempting CLI fallback", { tierId, projectId: parts.projectId });
+    log.debug("Antigravity provisioning failed, attempting CLI fallback", { tierId, projectId: parts.projectId })
     const cliProvisionedProjectId = await onboardManagedProject(
       accessToken,
       tierId,
       parts.projectId,
       true // useCliStyle
-    );
+    )
 
     if (cliProvisionedProjectId) {
-      log.debug("Successfully provisioned managed project via CLI fallback", { cliProvisionedProjectId });
-      return persistManagedProject(cliProvisionedProjectId);
+      log.debug("Successfully provisioned managed project via CLI fallback", { cliProvisionedProjectId })
+      return persistManagedProject(cliProvisionedProjectId)
     }
 
     log.warn("Failed to provision managed project - account may not work correctly", {
       hasProjectId: !!parts.projectId,
-    });
+    })
     toast.warn("Provisioning failed", {
       title: "Antigravity",
       message: "Could not provision a managed project. Account may have limited access.",
-    });
+    })
 
     if (parts.projectId) {
-      return { auth, effectiveProjectId: parts.projectId };
+      return { auth, effectiveProjectId: parts.projectId }
     }
 
     // No project id present in auth; fall back to the hardcoded id for requests.
-    return { auth, effectiveProjectId: fallbackProjectId };
-  };
+    return { auth, effectiveProjectId: fallbackProjectId }
+  }
 
   if (!cacheKey) {
-    return resolveContext();
+    return resolveContext()
   }
 
   const promise = resolveContext()
     .then((result) => {
-      const nextKey = getCacheKey(result.auth) ?? cacheKey;
-      projectContextPendingCache.delete(cacheKey);
-      projectContextResultCache.set(nextKey, result);
+      const nextKey = getCacheKey(result.auth) ?? cacheKey
+      projectContextPendingCache.delete(cacheKey)
+      projectContextResultCache.set(nextKey, result)
       if (nextKey !== cacheKey) {
-        projectContextResultCache.delete(cacheKey);
+        projectContextResultCache.delete(cacheKey)
       }
-      return result;
+      return result
     })
     .catch((error) => {
-      projectContextPendingCache.delete(cacheKey);
-      throw error;
-    });
+      projectContextPendingCache.delete(cacheKey)
+      throw error
+    })
 
-  projectContextPendingCache.set(cacheKey, promise);
-  return promise;
+  projectContextPendingCache.set(cacheKey, promise)
+  return promise
 }

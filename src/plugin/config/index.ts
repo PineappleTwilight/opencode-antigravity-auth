@@ -3,9 +3,9 @@
  * 
  * @example
  * ```typescript
- * import { loadConfig, type AntigravityConfig } from "./config";
+ * import { loadConfig, type AntigravityConfig } from "./index.ts"
  * 
- * const config = loadConfig(directory);
+ * const config = loadConfig(directory)
  * if (config.session_recovery) {
  *   // Enable session recovery
  * }
@@ -18,7 +18,7 @@ export {
   DEFAULT_CONFIG,
   type AntigravityConfig,
   type SignatureCacheConfig,
-} from "./schema";
+} from "./schema.ts"
 
 export {
   loadConfig,
@@ -29,4 +29,4 @@ export {
   initRuntimeConfig,
   getKeepThinking,
   wasConfigCreated,
-} from "./loader";
+} from "./loader.ts"

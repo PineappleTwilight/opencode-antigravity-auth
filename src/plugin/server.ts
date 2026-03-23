@@ -1,28 +1,28 @@
-import { createServer } from "node:http";
-import { readFileSync, existsSync } from "node:fs";
+import { createServer } from "node:http"
+import { readFileSync, existsSync } from "node:fs"
 
-import { ANTIGRAVITY_REDIRECT_URI } from "../constants";
+import { ANTIGRAVITY_REDIRECT_URI } from "../constants.ts"
 
 interface OAuthListenerOptions {
   /**
    * How long to wait for the OAuth redirect before timing out (in milliseconds).
    */
-  timeoutMs?: number;
+  timeoutMs?: number
 }
 
 export interface OAuthListener {
   /**
    * Resolves with the callback URL once Google redirects back to the local server.
    */
-  waitForCallback(): Promise<URL>;
+  waitForCallback(): Promise<URL>
   /**
    * Cleanly stop listening for callbacks.
    */
-  close(): Promise<void>;
+  close(): Promise<void>
 }
 
-const redirectUri = new URL(ANTIGRAVITY_REDIRECT_URI);
-const callbackPath = redirectUri.pathname || "/";
+const redirectUri = new URL(ANTIGRAVITY_REDIRECT_URI)
+const callbackPath = redirectUri.pathname || "/"
 
 /**
  * Detect if running in OrbStack Docker with --network host mode.
@@ -31,7 +31,7 @@ const callbackPath = redirectUri.pathname || "/";
 function isOrbStackDockerHost(): boolean {
   // Check if we're in Docker
   if (!existsSync("/.dockerenv")) {
-    return false;
+    return false
   }
   
   // Check for OrbStack-specific indicators
@@ -40,24 +40,24 @@ function isOrbStackDockerHost(): boolean {
     // OrbStack containers often have /run/.containerenv or specific mount patterns
     // Also check if /proc/version contains orbstack
     if (existsSync("/proc/version")) {
-      const version = readFileSync("/proc/version", "utf8").toLowerCase();
+      const version = readFileSync("/proc/version", "utf8").toLowerCase()
       if (version.includes("orbstack")) {
-        return true;
+        return true
       }
     }
     
     // Check hostname pattern (OrbStack uses specific patterns)
-    const hostname = process.env.HOSTNAME || "";
+    const hostname = process.env.HOSTNAME || ""
     if (hostname.startsWith("orbstack-") || hostname.endsWith(".orb") || hostname === "orbstack") {
-      return true;
+      return true
     }
     
     // Check for OrbStack's network host mode by looking at resolv.conf
     // OrbStack with --network host has specific DNS configuration
     if (existsSync("/etc/resolv.conf")) {
-      const resolv = readFileSync("/etc/resolv.conf", "utf8");
+      const resolv = readFileSync("/etc/resolv.conf", "utf8")
       if (resolv.includes("orb.local") || resolv.includes("orbstack")) {
-        return true;
+        return true
       }
     }
     
@@ -67,26 +67,26 @@ function isOrbStackDockerHost(): boolean {
       // Most OrbStack containers will have been caught above
       // For safety, also check common OrbStack mount patterns
       if (existsSync("/run/host-services")) {
-        return true;
+        return true
       }
     }
   } catch {
     // Ignore errors, fall through to default
   }
   
-  return false;
+  return false
 }
 
 /**
  * Detect WSL (Windows Subsystem for Linux) environment.
  */
 function isWSL(): boolean {
-  if (process.platform !== "linux") return false;
+  if (process.platform !== "linux") return false
   try {
-    const release = readFileSync("/proc/version", "utf8").toLowerCase();
-    return release.includes("microsoft") || release.includes("wsl");
+    const release = readFileSync("/proc/version", "utf8").toLowerCase()
+    return release.includes("microsoft") || release.includes("wsl")
   } catch {
-    return false;
+    return false
   }
 }
 
@@ -95,12 +95,12 @@ function isWSL(): boolean {
  */
 function isRemoteEnvironment(): boolean {
   if (process.env.SSH_CLIENT || process.env.SSH_TTY || process.env.SSH_CONNECTION) {
-    return true;
+    return true
   }
   if (process.env.REMOTE_CONTAINERS || process.env.CODESPACES) {
-    return true;
+    return true
   }
-  return false;
+  return false
 }
 
 /**
@@ -114,23 +114,23 @@ function isRemoteEnvironment(): boolean {
  */
 function getBindAddress(): string {
   // Allow user override via environment variable
-  const envBind = process.env.OPENCODE_ANTIGRAVITY_OAUTH_BIND;
+  const envBind = process.env.OPENCODE_ANTIGRAVITY_OAUTH_BIND
   if (envBind) {
-    return envBind;
+    return envBind
   }
   
   // OrbStack Docker needs 127.0.0.1 for --network host port forwarding
   if (isOrbStackDockerHost()) {
-    return "127.0.0.1";
+    return "127.0.0.1"
   }
   
   // WSL and remote environments need 0.0.0.0 to be reachable
   if (isWSL() || isRemoteEnvironment()) {
-    return "0.0.0.0";
+    return "0.0.0.0"
   }
   
   // Default to 127.0.0.1 for security (local-only access)
-  return "127.0.0.1";
+  return "127.0.0.1"
 }
 
 /**
@@ -144,27 +144,27 @@ export async function startOAuthListener(
     ? Number.parseInt(redirectUri.port, 10)
     : redirectUri.protocol === "https:"
     ? 443
-    : 80;
-  const origin = `${redirectUri.protocol}//${redirectUri.host}`;
+    : 80
+  const origin = `${redirectUri.protocol}//${redirectUri.host}`
 
-  let settled = false;
-  let resolveCallback: (url: URL) => void;
-  let rejectCallback: (error: Error) => void;
-  let timeoutHandle: NodeJS.Timeout;
+  let settled = false
+  let resolveCallback: (url: URL) => void
+  let rejectCallback: (error: Error) => void
+  let timeoutHandle: NodeJS.Timeout
   const callbackPromise = new Promise<URL>((resolve, reject) => {
     resolveCallback = (url: URL) => {
-      if (settled) return;
-      settled = true;
-      if (timeoutHandle) clearTimeout(timeoutHandle);
-      resolve(url);
-    };
+      if (settled) return
+      settled = true
+      if (timeoutHandle) clearTimeout(timeoutHandle)
+      resolve(url)
+    }
     rejectCallback = (error: Error) => {
-      if (settled) return;
-      settled = true;
-      if (timeoutHandle) clearTimeout(timeoutHandle);
-      reject(error);
-    };
-  });
+      if (settled) return
+      settled = true
+      if (timeoutHandle) clearTimeout(timeoutHandle)
+      reject(error)
+    }
+  })
 
 const successResponse = `<!DOCTYPE html>
 <html lang="en">
@@ -174,97 +174,97 @@ const successResponse = `<!DOCTYPE html>
     <title>Authentication Successful</title>
     <style>
       :root {
-        --bg: #FAFAFA;
-        --card-bg: #FFFFFF;
-        --text-primary: #1F2937;
-        --text-secondary: #6B7280;
-        --accent: #2563EB;
-        --success: #10B981;
-        --border: #E5E7EB;
+        --bg: #FAFAFA
+        --card-bg: #FFFFFF
+        --text-primary: #1F2937
+        --text-secondary: #6B7280
+        --accent: #2563EB
+        --success: #10B981
+        --border: #E5E7EB
       }
       @media (prefers-color-scheme: dark) {
         :root {
-          --bg: #111827;
-          --card-bg: #1F2937;
-          --text-primary: #F9FAFB;
-          --text-secondary: #9CA3AF;
-          --accent: #3B82F6;
-          --success: #34D399;
-          --border: #374151;
+          --bg: #111827
+          --card-bg: #1F2937
+          --text-primary: #F9FAFB
+          --text-secondary: #9CA3AF
+          --accent: #3B82F6
+          --success: #34D399
+          --border: #374151
         }
       }
       body {
-        margin: 0;
-        min-height: 100vh;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        background: var(--bg);
-        color: var(--text-primary);
-        padding: 1rem;
+        margin: 0
+        min-height: 100vh
+        display: flex
+        align-items: center
+        justify-content: center
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif
+        background: var(--bg)
+        color: var(--text-primary)
+        padding: 1rem
       }
       .card {
-        background: var(--card-bg);
-        border-radius: 16px;
-        padding: 3rem 2rem;
-        width: 100%;
-        max-width: 400px;
-        text-align: center;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-        border: 1px solid var(--border);
+        background: var(--card-bg)
+        border-radius: 16px
+        padding: 3rem 2rem
+        width: 100%
+        max-width: 400px
+        text-align: center
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)
+        border: 1px solid var(--border)
       }
       .icon-wrapper {
-        width: 64px;
-        height: 64px;
-        background: rgba(16, 185, 129, 0.1);
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin: 0 auto 1.5rem;
+        width: 64px
+        height: 64px
+        background: rgba(16, 185, 129, 0.1)
+        border-radius: 50%
+        display: flex
+        align-items: center
+        justify-content: center
+        margin: 0 auto 1.5rem
       }
       .icon {
-        width: 32px;
-        height: 32px;
-        color: var(--success);
+        width: 32px
+        height: 32px
+        color: var(--success)
       }
       h1 {
-        font-size: 1.5rem;
-        font-weight: 600;
-        margin: 0 0 0.5rem;
-        letter-spacing: -0.025em;
+        font-size: 1.5rem
+        font-weight: 600
+        margin: 0 0 0.5rem
+        letter-spacing: -0.025em
       }
       p {
-        color: var(--text-secondary);
-        font-size: 0.95rem;
-        line-height: 1.5;
-        margin: 0 0 2rem;
+        color: var(--text-secondary)
+        font-size: 0.95rem
+        line-height: 1.5
+        margin: 0 0 2rem
       }
       .btn {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        background: var(--text-primary);
-        color: var(--card-bg);
-        font-weight: 500;
-        padding: 0.75rem 1.5rem;
-        border-radius: 8px;
-        text-decoration: none;
-        transition: opacity 0.2s;
-        font-size: 0.95rem;
-        border: none;
-        cursor: pointer;
-        width: 100%;
-        box-sizing: border-box;
+        display: inline-flex
+        align-items: center
+        justify-content: center
+        background: var(--text-primary)
+        color: var(--card-bg)
+        font-weight: 500
+        padding: 0.75rem 1.5rem
+        border-radius: 8px
+        text-decoration: none
+        transition: opacity 0.2s
+        font-size: 0.95rem
+        border: none
+        cursor: pointer
+        width: 100%
+        box-sizing: border-box
       }
       .btn:hover {
-        opacity: 0.9;
+        opacity: 0.9
       }
       .sub-text {
-        margin-top: 1rem;
-        font-size: 0.8rem;
-        color: var(--text-secondary);
+        margin-top: 1rem
+        font-size: 0.8rem
+        color: var(--text-secondary)
       }
     </style>
   </head>
@@ -282,70 +282,70 @@ const successResponse = `<!DOCTYPE html>
     </div>
     <script>
       function closeWindow() {
-        window.close();
+        window.close()
         // Fallback if window.close() is blocked
-        document.querySelector('.btn').textContent = "Tab cannot be closed automatically";
-        document.querySelector('.btn').style.opacity = "0.5";
-        document.querySelector('.btn').style.cursor = "default";
+        document.querySelector('.btn').textContent = "Tab cannot be closed automatically"
+        document.querySelector('.btn').style.opacity = "0.5"
+        document.querySelector('.btn').style.cursor = "default"
       }
     </script>
   </body>
-</html>`;
+</html>`
 
   timeoutHandle = setTimeout(() => {
-    rejectCallback(new Error("Timed out waiting for OAuth callback"));
-  }, timeoutMs);
-  timeoutHandle.unref?.();
+    rejectCallback(new Error("Timed out waiting for OAuth callback"))
+  }, timeoutMs)
+  timeoutHandle.unref?.()
 
   const server = createServer((request, response) => {
     if (!request.url) {
-      response.writeHead(400, { "Content-Type": "text/plain" });
-      response.end("Invalid request");
-      return;
+      response.writeHead(400, { "Content-Type": "text/plain" })
+      response.end("Invalid request")
+      return
     }
 
-    const url = new URL(request.url, origin);
+    const url = new URL(request.url, origin)
     if (url.pathname !== callbackPath) {
-      response.writeHead(404, { "Content-Type": "text/plain" });
-      response.end("Not found");
-      return;
+      response.writeHead(404, { "Content-Type": "text/plain" })
+      response.end("Not found")
+      return
     }
 
-    response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-    response.end(successResponse);
+    response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+    response.end(successResponse)
 
-    resolveCallback(url);
+    resolveCallback(url)
 
     setImmediate(() => {
-      server.close();
-    });
-  });
+      server.close()
+    })
+  })
 
-  const bindAddress = getBindAddress();
+  const bindAddress = getBindAddress()
   
   await new Promise<void>((resolve, reject) => {
     const handleError = (error: NodeJS.ErrnoException) => {
-      server.off("error", handleError);
+      server.off("error", handleError)
       if (error.code === "EADDRINUSE") {
         reject(new Error(
           `Port ${port} is already in use. ` +
           `Another process is occupying this port. ` +
           `Please terminate the process or try again later.`
-        ));
-        return;
+        ))
+        return
       }
-      reject(error);
-    };
-    server.once("error", handleError);
+      reject(error)
+    }
+    server.once("error", handleError)
     server.listen(port, bindAddress, () => {
-      server.off("error", handleError);
-      resolve();
-    });
-  });
+      server.off("error", handleError)
+      resolve()
+    })
+  })
 
   server.on("error", (error) => {
-    rejectCallback(error instanceof Error ? error : new Error(String(error)));
-  });
+    rejectCallback(error instanceof Error ? error : new Error(String(error)))
+  })
 
   return {
     waitForCallback: () => callbackPromise,
@@ -353,14 +353,14 @@ const successResponse = `<!DOCTYPE html>
       new Promise<void>((resolve, reject) => {
         server.close((error) => {
           if (error && (error as NodeJS.ErrnoException).code !== "ERR_SERVER_NOT_RUNNING") {
-            reject(error);
-            return;
+            reject(error)
+            return
           }
           if (!settled) {
-            rejectCallback(new Error("OAuth listener closed before callback"));
+            rejectCallback(new Error("OAuth listener closed before callback"))
           }
-          resolve();
-        });
+          resolve()
+        })
       }),
-  };
+  }
 }

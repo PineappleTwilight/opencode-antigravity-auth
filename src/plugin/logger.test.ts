@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { DEFAULT_CONFIG } from "./config"
-import type { PluginClient } from "./types"
+import { DEFAULT_CONFIG } from "./config/index.ts"
+import type { PluginClient } from "./types.ts"
 
 const { ensureGitignoreSyncMock } = vi.hoisted(() => ({
   ensureGitignoreSyncMock: vi.fn(),
@@ -17,13 +17,13 @@ describe("logger sink routing", () => {
   })
 
   afterEach(async () => {
-    const { initializeDebug } = await import("./debug")
+    const { initializeDebug } = await import("./debug.ts")
     initializeDebug(DEFAULT_CONFIG)
   })
 
   it("routes logs to TUI when debug_tui is enabled without file debug", async () => {
-    const { initializeDebug } = await import("./debug")
-    const { createLogger, initLogger } = await import("./logger")
+    const { initializeDebug } = await import("./debug.ts")
+    const { createLogger, initLogger } = await import("./logger.ts")
 
     initializeDebug({
       ...DEFAULT_CONFIG,
@@ -54,8 +54,8 @@ describe("logger sink routing", () => {
   })
 
   it("does not route to TUI when only file debug is enabled", async () => {
-    const { initializeDebug } = await import("./debug")
-    const { createLogger, initLogger } = await import("./logger")
+    const { initializeDebug } = await import("./debug.ts")
+    const { createLogger, initLogger } = await import("./logger.ts")
 
     initializeDebug({
       ...DEFAULT_CONFIG,

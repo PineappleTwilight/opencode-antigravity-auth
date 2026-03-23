@@ -8,14 +8,14 @@
  * 3. Project config file
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { homedir } from "node:os";
-import { AntigravityConfigSchema, DEFAULT_CONFIG, type AntigravityConfig } from "./schema";
-import { createLogger } from "../logger";
-import { toast } from "../ui/toast";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs"
+import { join, dirname } from "node:path"
+import { homedir } from "node:os"
+import { AntigravityConfigSchema, DEFAULT_CONFIG, type AntigravityConfig } from "./schema.ts"
+import { createLogger } from "../logger.ts"
+import { toast } from "../ui/toast.ts"
 
-const log = createLogger("config");
+const log = createLogger("config")
 
 // =============================================================================
 // Path Utilities
@@ -29,26 +29,26 @@ const log = createLogger("config");
 function getConfigDir(): string {
   // 1. Check for explicit override via env var
   if (process.env.OPENCODE_CONFIG_DIR) {
-    return process.env.OPENCODE_CONFIG_DIR;
+    return process.env.OPENCODE_CONFIG_DIR
   }
 
   // 2. Use ~/.config/opencode on all platforms (including Windows)
-  const xdgConfig = process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
-  return join(xdgConfig, "opencode");
+  const xdgConfig = process.env.XDG_CONFIG_HOME || join(homedir(), ".config")
+  return join(xdgConfig, "opencode")
 }
 
 /**
  * Get the user-level config file path.
  */
 export function getUserConfigPath(): string {
-  return join(getConfigDir(), "antigravity.json");
+  return join(getConfigDir(), "antigravity.json")
 }
 
 /**
  * Get the project-level config file path.
  */
 export function getProjectConfigPath(directory: string): string {
-  return join(directory, ".opencode", "antigravity.json");
+  return join(directory, ".opencode", "antigravity.json")
 }
 
 // =============================================================================
@@ -61,31 +61,31 @@ export function getProjectConfigPath(directory: string): string {
 function loadConfigFile(path: string): Partial<AntigravityConfig> | null {
   try {
     if (!existsSync(path)) {
-      return null;
+      return null
     }
 
-    const content = readFileSync(path, "utf-8");
-    const rawConfig = JSON.parse(content);
+    const content = readFileSync(path, "utf-8")
+    const rawConfig = JSON.parse(content)
 
     // Validate with Zod (partial - we'll merge with defaults later)
-    const result = AntigravityConfigSchema.partial().safeParse(rawConfig);
+    const result = AntigravityConfigSchema.partial().safeParse(rawConfig)
 
     if (!result.success) {
       log.warn("Config validation error", {
         path,
         issues: result.error.issues.map(i => `${i.path.join(".")}: ${i.message}`).join(", "),
-      });
-      return null;
+      })
+      return null
     }
 
-    return result.data;
+    return result.data
   } catch (error) {
     if (error instanceof SyntaxError) {
-      log.warn("Invalid JSON in config file", { path, error: error.message });
+      log.warn("Invalid JSON in config file", { path, error: error.message })
     } else {
-      log.warn("Failed to load config file", { path, error: String(error) });
+      log.warn("Failed to load config file", { path, error: String(error) })
     }
-    return null;
+    return null
   }
 }
 
@@ -106,20 +106,20 @@ function mergeConfigs(
           ...override.signature_cache,
         }
       : base.signature_cache,
-  };
+  }
 }
 
 // =============================================================================
 // Main Loader
 // =============================================================================
 
-let _wasConfigCreated = false;
+let _wasConfigCreated = false
 
 /**
  * Returns true if a default configuration was created during the last loadConfig call.
  */
 export function wasConfigCreated(): boolean {
-  return _wasConfigCreated;
+  return _wasConfigCreated
 }
 
 /**
@@ -129,68 +129,68 @@ export function wasConfigCreated(): boolean {
  * @returns Fully resolved configuration
  */
 export function loadConfig(directory: string): AntigravityConfig {
-  _wasConfigCreated = false;
+  _wasConfigCreated = false
   // Ensure default user config exists
-  const userConfigPath = getUserConfigPath();
+  const userConfigPath = getUserConfigPath()
   if (!existsSync(userConfigPath)) {
     try {
-      const configDir = dirname(userConfigPath);
+      const configDir = dirname(userConfigPath)
       if (!existsSync(configDir)) {
-        mkdirSync(configDir, { recursive: true });
+        mkdirSync(configDir, { recursive: true })
       }
       
       const defaultConfigWithSchema = {
         $schema: "https://raw.githubusercontent.com/PineappleTwilight/opencode-antigravity-auth/main/assets/antigravity.schema.json",
         ...DEFAULT_CONFIG
-      };
+      }
       
-      writeFileSync(userConfigPath, JSON.stringify(defaultConfigWithSchema, null, 2), "utf-8");
-      log.info("Created default configuration", { path: userConfigPath });
-      _wasConfigCreated = true;
+      writeFileSync(userConfigPath, JSON.stringify(defaultConfigWithSchema, null, 2), "utf-8")
+      log.info("Created default configuration", { path: userConfigPath })
+      _wasConfigCreated = true
     } catch (error) {
-      log.warn("Failed to create default configuration", { error: String(error) });
+      log.warn("Failed to create default configuration", { error: String(error) })
     }
   }
 
   // Start with defaults
-  let config: AntigravityConfig = { ...DEFAULT_CONFIG };
+  let config: AntigravityConfig = { ...DEFAULT_CONFIG }
 
   // Load user config file (if exists)
-  const userConfig = loadConfigFile(userConfigPath);
+  const userConfig = loadConfigFile(userConfigPath)
   if (userConfig) {
-    config = mergeConfigs(config, userConfig);
+    config = mergeConfigs(config, userConfig)
   }
 
   // Load project config file (if exists) - overrides user config
-  const projectConfigPath = getProjectConfigPath(directory);
-  const projectConfig = loadConfigFile(projectConfigPath);
+  const projectConfigPath = getProjectConfigPath(directory)
+  const projectConfig = loadConfigFile(projectConfigPath)
   if (projectConfig) {
-    config = mergeConfigs(config, projectConfig);
+    config = mergeConfigs(config, projectConfig)
   }
 
-  return config;
+  return config
 }
 
 /**
  * Check if a config file exists at the given path.
  */
 export function configExists(path: string): boolean {
-  return existsSync(path);
+  return existsSync(path)
 }
 
 /**
  * Get the default logs directory.
  */
 export function getDefaultLogsDir(): string {
-  return join(getConfigDir(), "antigravity-logs");
+  return join(getConfigDir(), "antigravity-logs")
 }
 
-let runtimeConfig: AntigravityConfig | null = null;
+let runtimeConfig: AntigravityConfig | null = null
 
 export function initRuntimeConfig(config: AntigravityConfig): void {
-  runtimeConfig = config;
+  runtimeConfig = config
 }
 
 export function getKeepThinking(): boolean {
-  return runtimeConfig?.keep_thinking ?? false;
+  return runtimeConfig?.keep_thinking ?? false
 }

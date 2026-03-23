@@ -15,19 +15,19 @@
 
 export interface HealthScoreConfig {
   /** Initial score for new accounts (default: 70) */
-  initial: number;
+  initial: number
   /** Points added on successful request (default: 1) */
-  successReward: number;
+  successReward: number
   /** Points removed on rate limit (default: -10) */
-  rateLimitPenalty: number;
+  rateLimitPenalty: number
   /** Points removed on failure (auth, network, etc.) (default: -20) */
-  failurePenalty: number;
+  failurePenalty: number
   /** Points recovered per hour of rest (default: 2) */
-  recoveryRatePerHour: number;
+  recoveryRatePerHour: number
   /** Minimum score to be considered usable (default: 50) */
-  minUsable: number;
+  minUsable: number
   /** Maximum score cap (default: 100) */
-  maxScore: number;
+  maxScore: number
 }
 
 export const DEFAULT_HEALTH_SCORE_CONFIG: HealthScoreConfig = {
@@ -38,13 +38,13 @@ export const DEFAULT_HEALTH_SCORE_CONFIG: HealthScoreConfig = {
   recoveryRatePerHour: 2,
   minUsable: 50,
   maxScore: 100,
-};
+}
 
 interface HealthScoreState {
-  score: number;
-  lastUpdated: number;
-  lastSuccess: number;
-  consecutiveFailures: number;
+  score: number
+  lastUpdated: number
+  lastSuccess: number
+  consecutiveFailures: number
 }
 
 /**
@@ -52,113 +52,117 @@ interface HealthScoreState {
  * Higher score = healthier account = preferred for selection.
  */
 export class HealthScoreTracker {
-  private readonly scores = new Map<number, HealthScoreState>();
-  private readonly config: HealthScoreConfig;
+  private readonly scores = new Map<number, HealthScoreState>()
+  private readonly config: HealthScoreConfig
 
   constructor(config: Partial<HealthScoreConfig> = {}) {
-    this.config = { ...DEFAULT_HEALTH_SCORE_CONFIG, ...config };
+    this.config = { ...DEFAULT_HEALTH_SCORE_CONFIG, ...config }
   }
 
   /**
    * Get current health score for an account, applying time-based recovery.
    */
   getScore(accountIndex: number): number {
-    const state = this.scores.get(accountIndex);
+    const state = this.scores.get(accountIndex)
     if (!state) {
-      return this.config.initial;
+      return this.config.initial
     }
 
     // Apply passive recovery based on time since last update
-    const now = Date.now();
-    const hoursSinceUpdate = (now - state.lastUpdated) / (1000 * 60 * 60);
-    const recoveredPoints = Math.floor(hoursSinceUpdate * this.config.recoveryRatePerHour);
+    const now = Date.now()
+    const hoursSinceUpdate = (now - state.lastUpdated) / (1000 * 60 * 60)
+    const recoveredPoints = Math.floor(hoursSinceUpdate * this.config.recoveryRatePerHour)
     
     return Math.min(
       this.config.maxScore,
       state.score + recoveredPoints
-    );
+    )
   }
 
   /**
    * Record a successful request - improves health score.
    */
   recordSuccess(accountIndex: number): void {
-    const now = Date.now();
-    const current = this.getScore(accountIndex);
+    const now = Date.now()
+    const current = this.getScore(accountIndex)
     
     this.scores.set(accountIndex, {
       score: Math.min(this.config.maxScore, current + this.config.successReward),
       lastUpdated: now,
       lastSuccess: now,
       consecutiveFailures: 0,
-    });
+    })
   }
 
   /**
    * Record a rate limit hit - moderate penalty.
    */
-  recordRateLimit(accountIndex: number): void {
-    const now = Date.now();
-    const state = this.scores.get(accountIndex);
-    const current = this.getScore(accountIndex);
+  recordRateLimit(accountIndex: number, penalty?: number): void {
+    const now = Date.now()
+    const state = this.scores.get(accountIndex)
+    const current = this.getScore(accountIndex)
+    
+    const appliedPenalty = penalty ?? this.config.rateLimitPenalty
     
     this.scores.set(accountIndex, {
-      score: Math.max(0, current + this.config.rateLimitPenalty),
+      score: Math.max(0, current + appliedPenalty),
       lastUpdated: now,
       lastSuccess: state?.lastSuccess ?? 0,
       consecutiveFailures: (state?.consecutiveFailures ?? 0) + 1,
-    });
+    })
   }
 
   /**
    * Record a failure (auth, network, etc.) - larger penalty.
    */
-  recordFailure(accountIndex: number): void {
-    const now = Date.now();
-    const state = this.scores.get(accountIndex);
-    const current = this.getScore(accountIndex);
+  recordFailure(accountIndex: number, penalty?: number): void {
+    const now = Date.now()
+    const state = this.scores.get(accountIndex)
+    const current = this.getScore(accountIndex)
+    
+    const appliedPenalty = penalty ?? this.config.failurePenalty
     
     this.scores.set(accountIndex, {
-      score: Math.max(0, current + this.config.failurePenalty),
+      score: Math.max(0, current + appliedPenalty),
       lastUpdated: now,
       lastSuccess: state?.lastSuccess ?? 0,
       consecutiveFailures: (state?.consecutiveFailures ?? 0) + 1,
-    });
+    })
   }
 
   /**
    * Check if account is healthy enough to use.
    */
   isUsable(accountIndex: number): boolean {
-    return this.getScore(accountIndex) >= this.config.minUsable;
+    return this.getScore(accountIndex) >= this.config.minUsable
   }
 
   /**
    * Get consecutive failure count for an account.
    */
   getConsecutiveFailures(accountIndex: number): number {
-    return this.scores.get(accountIndex)?.consecutiveFailures ?? 0;
+    return this.scores.get(accountIndex)?.consecutiveFailures ?? 0
   }
 
   /**
    * Reset health state for an account (e.g., after removal).
    */
   reset(accountIndex: number): void {
-    this.scores.delete(accountIndex);
+    this.scores.delete(accountIndex)
   }
 
   /**
    * Get all scores for debugging/logging.
    */
   getSnapshot(): Map<number, { score: number; consecutiveFailures: number }> {
-    const result = new Map<number, { score: number; consecutiveFailures: number }>();
+    const result = new Map<number, { score: number; consecutiveFailures: number }>()
     for (const [index] of this.scores) {
       result.set(index, {
         score: this.getScore(index),
         consecutiveFailures: this.getConsecutiveFailures(index),
-      });
+      })
     }
-    return result;
+    return result
   }
 }
 
@@ -175,9 +179,9 @@ export class HealthScoreTracker {
  * @returns Jittered delay in milliseconds
  */
 export function addJitter(baseMs: number, jitterFactor: number = 0.3): number {
-  const jitterRange = baseMs * jitterFactor;
-  const jitter = (Math.random() * 2 - 1) * jitterRange; // -jitterRange to +jitterRange
-  return Math.max(0, Math.round(baseMs + jitter));
+  const jitterRange = baseMs * jitterFactor
+  const jitter = (Math.random() * 2 - 1) * jitterRange// -jitterRange to +jitterRange
+  return Math.max(0, Math.round(baseMs + jitter))
 }
 
 /**
@@ -188,7 +192,7 @@ export function addJitter(baseMs: number, jitterFactor: number = 0.3): number {
  * @returns Random delay between min and max
  */
 export function randomDelay(minMs: number, maxMs: number): number {
-  return Math.round(minMs + Math.random() * (maxMs - minMs));
+  return Math.round(minMs + Math.random() * (maxMs - minMs))
 }
 
 // ============================================================================
@@ -196,12 +200,12 @@ export function randomDelay(minMs: number, maxMs: number): number {
 // ============================================================================
 
 export interface AccountWithMetrics {
-  index: number;
-  lastUsed: number;
-  healthScore: number;
-  isRateLimited: boolean;
-  isCoolingDown: boolean;
-  remainingQuotaFraction: number;
+  index: number
+  lastUsed: number
+  healthScore: number
+  isRateLimited: boolean
+  isCoolingDown: boolean
+  remainingQuotaFraction: number
 }
 
 /**
@@ -221,27 +225,27 @@ export function sortByLruWithHealth(
     .filter(acc => !acc.isRateLimited && !acc.isCoolingDown && acc.healthScore >= minHealthScore)
     .sort((a, b) => {
       // Primary: LRU (oldest lastUsed first)
-      const lruDiff = a.lastUsed - b.lastUsed;
-      if (lruDiff !== 0) return lruDiff;
+      const lruDiff = a.lastUsed - b.lastUsed
+      if (lruDiff !== 0) return lruDiff
       
       // Tiebreaker: higher health score wins
-      return b.healthScore - a.healthScore;
-    });
+      return b.healthScore - a.healthScore
+    })
 }
 
-import { getConcurrencyTracker } from "./concurrency";
+import { getConcurrencyTracker } from "./concurrency.ts"
 
 /** Stickiness bonus added to current account's score to prevent unnecessary switching */
-const STICKINESS_BONUS = 150;
+const STICKINESS_BONUS = 150
 
 /** Extra bonus for continuing a specific conversation (prevents unnecessary prompt cache misses) */
-const CONVERSATION_STICKINESS_BONUS = 300;
+const CONVERSATION_STICKINESS_BONUS = 300
 
 /** Minimum score advantage required to switch away from current account */
-const SWITCH_THRESHOLD = 100;
+const SWITCH_THRESHOLD = 100
 
 /** Penalty for each concurrent request to distribute load */
-const CONCURRENCY_PENALTY = 200;
+const CONCURRENCY_PENALTY = 200
 
 /**
  * Select account using hybrid strategy with stickiness:
@@ -264,7 +268,7 @@ export function selectHybridAccount(
   lastAccountForSession: number | null = null,
   minHealthScore: number = 50,
 ): number | null {
-  const concurrencyTracker = getConcurrencyTracker();
+  const concurrencyTracker = getConcurrencyTracker()
   const candidates = accounts
     .filter(acc => 
       !acc.isRateLimited && 
@@ -276,23 +280,23 @@ export function selectHybridAccount(
       ...acc,
       tokens: tokenTracker.getTokens(acc.index),
       activeCount: concurrencyTracker.getActiveCount(acc.index)
-    }));
+    }))
 
   if (candidates.length === 0) {
-    return null;
+    return null
   }
 
-  const maxTokens = tokenTracker.getMaxTokens();
+  const maxTokens = tokenTracker.getMaxTokens()
   const scored = candidates
     .map(acc => {
-      const baseScore = calculateHybridScore(acc, maxTokens);
+      const baseScore = calculateHybridScore(acc, maxTokens)
       
       // Scale stickiness bonus by health: healthier accounts are more "sticky"
-      const finalStickiness = STICKINESS_BONUS * (acc.healthScore / 100);
-      const stickinessBonus = acc.index === currentAccountIndex ? finalStickiness : 0;
+      const finalStickiness = STICKINESS_BONUS * (acc.healthScore / 100)
+      const stickinessBonus = acc.index === currentAccountIndex ? finalStickiness : 0
       
       // Apply conversation stickiness bonus (preserves prompt cache)
-      const sessionBonus = acc.index === lastAccountForSession ? CONVERSATION_STICKINESS_BONUS : 0;
+      const sessionBonus = acc.index === lastAccountForSession ? CONVERSATION_STICKINESS_BONUS : 0
       
       return {
         index: acc.index,
@@ -300,59 +304,59 @@ export function selectHybridAccount(
         score: baseScore + stickinessBonus + sessionBonus,
         isCurrent: acc.index === currentAccountIndex,
         isSessionMatch: acc.index === lastAccountForSession
-      };
+      }
     })
-    .sort((a, b) => b.score - a.score);
+    .sort((a, b) => b.score - a.score)
 
-  const best = scored[0];
+  const best = scored[0]
   if (!best) {
-    return null;
+    return null
   }
 
   // If we have a session match and it's still healthy/available, prefer it strongly
-  const sessionCandidate = scored.find(s => s.isSessionMatch);
+  const sessionCandidate = scored.find(s => s.isSessionMatch)
   if (sessionCandidate && !best.isSessionMatch) {
-    const advantage = best.baseScore - sessionCandidate.baseScore;
+    const advantage = best.baseScore - sessionCandidate.baseScore
     // Overriding conversation stickiness (500 threshold)
     // Don't switch away unless advantage is very high (over 500 points)
     if (advantage < 500) {
-      return sessionCandidate.index;
+      return sessionCandidate.index
     }
   }
 
   // If current account is still a candidate, check if switch is warranted
-  const currentCandidate = scored.find(s => s.isCurrent);
+  const currentCandidate = scored.find(s => s.isCurrent)
   if (currentCandidate && !best.isCurrent) {
-    const advantage = best.baseScore - currentCandidate.baseScore;
+    const advantage = best.baseScore - currentCandidate.baseScore
     if (advantage < SWITCH_THRESHOLD) {
-      return currentCandidate.index;
+      return currentCandidate.index
     }
   }
 
-  return best.index;
+  return best.index
 }
 
 interface AccountWithContext extends AccountWithMetrics {
-  tokens: number;
-  activeCount: number;
+  tokens: number
+  activeCount: number
 }
 
 function calculateHybridScore(
   account: AccountWithContext,
   maxTokens: number
 ): number {
-  const healthComponent = account.healthScore * 2; // 0-200
-  const tokenComponent = (account.tokens / maxTokens) * 100 * 5; // 0-500
-  const secondsSinceUsed = (Date.now() - account.lastUsed) / 1000;
-  const freshnessComponent = Math.min(secondsSinceUsed, 3600) * 0.1; // 0-360
+  const healthComponent = account.healthScore * 2// 0-200
+  const tokenComponent = (account.tokens / maxTokens) * 100 * 5// 0-500
+  const secondsSinceUsed = (Date.now() - account.lastUsed) / 1000
+  const freshnessComponent = Math.min(secondsSinceUsed, 3600) * 0.1// 0-360
   
   // Daily quota health score (0-400)
-  const quotaScore = (account.remainingQuotaFraction ?? 1) * 400;
+  const quotaScore = (account.remainingQuotaFraction ?? 1) * 400
 
   // Penalty for each active request to distribute load during high concurrency
-  const concurrencyPenalty = account.activeCount * CONCURRENCY_PENALTY;
+  const concurrencyPenalty = account.activeCount * CONCURRENCY_PENALTY
   
-  return Math.max(0, healthComponent + tokenComponent + freshnessComponent + quotaScore - concurrencyPenalty);
+  return Math.max(0, healthComponent + tokenComponent + freshnessComponent + quotaScore - concurrencyPenalty)
 }
 
 // ============================================================================
@@ -361,22 +365,22 @@ function calculateHybridScore(
 
 export interface TokenBucketConfig {
   /** Maximum tokens per account (default: 50) */
-  maxTokens: number;
+  maxTokens: number
   /** Tokens regenerated per minute (default: 6) */
-  regenerationRatePerMinute: number;
+  regenerationRatePerMinute: number
   /** Initial tokens for new accounts (default: 50) */
-  initialTokens: number;
+  initialTokens: number
 }
 
 export const DEFAULT_TOKEN_BUCKET_CONFIG: TokenBucketConfig = {
   maxTokens: 50,
   regenerationRatePerMinute: 6,
   initialTokens: 50,
-};
+}
 
 interface TokenBucketState {
-  tokens: number;
-  lastUpdated: number;
+  tokens: number
+  lastUpdated: number
 }
 
 /**
@@ -384,30 +388,30 @@ interface TokenBucketState {
  * Helps prevent hitting server 429s by tracking "cost" of requests.
  */
 export class TokenBucketTracker {
-  private readonly buckets = new Map<number, TokenBucketState>();
-  private readonly config: TokenBucketConfig;
+  private readonly buckets = new Map<number, TokenBucketState>()
+  private readonly config: TokenBucketConfig
 
   constructor(config: Partial<TokenBucketConfig> = {}) {
-    this.config = { ...DEFAULT_TOKEN_BUCKET_CONFIG, ...config };
+    this.config = { ...DEFAULT_TOKEN_BUCKET_CONFIG, ...config }
   }
 
   /**
    * Get current token balance for an account, applying regeneration.
    */
   getTokens(accountIndex: number): number {
-    const state = this.buckets.get(accountIndex);
+    const state = this.buckets.get(accountIndex)
     if (!state) {
-      return this.config.initialTokens;
+      return this.config.initialTokens
     }
 
-    const now = Date.now();
-    const minutesSinceUpdate = (now - state.lastUpdated) / (1000 * 60);
-    const recoveredTokens = minutesSinceUpdate * this.config.regenerationRatePerMinute;
+    const now = Date.now()
+    const minutesSinceUpdate = (now - state.lastUpdated) / (1000 * 60)
+    const recoveredTokens = minutesSinceUpdate * this.config.regenerationRatePerMinute
     
     return Math.min(
       this.config.maxTokens,
       state.tokens + recoveredTokens
-    );
+    )
   }
 
   /**
@@ -415,18 +419,18 @@ export class TokenBucketTracker {
    */
   getModelCost(family?: string | null, model?: string | null): number {
     if (family === "claude") {
-      return 15; // Claude models are expensive
+      return 15// Claude models are expensive
     }
     if (model) {
-      const lowerModel = model.toLowerCase();
+      const lowerModel = model.toLowerCase()
       if (lowerModel.includes("pro") || lowerModel.includes("ultra")) {
-        return 10;
+        return 10
       }
       if (lowerModel.includes("flash") || lowerModel.includes("lite")) {
-        return 2;
+        return 2
       }
     }
-    return 5; // Default cost
+    return 5// Default cost
   }
 
   /**
@@ -435,8 +439,8 @@ export class TokenBucketTracker {
    * @param model Model name
    */
   hasTokens(accountIndex: number, familyOrCost?: string | number | null, model?: string | null): boolean {
-    const cost = typeof familyOrCost === "number" ? familyOrCost : this.getModelCost(familyOrCost, model);
-    return this.getTokens(accountIndex) >= cost;
+    const cost = typeof familyOrCost === "number" ? familyOrCost : this.getModelCost(familyOrCost, model)
+    return this.getTokens(accountIndex) >= cost
   }
 
   /**
@@ -446,17 +450,17 @@ export class TokenBucketTracker {
    * @returns true if tokens were consumed, false if insufficient
    */
   consume(accountIndex: number, familyOrCost?: string | number | null, model?: string | null): boolean {
-    const cost = typeof familyOrCost === "number" ? familyOrCost : this.getModelCost(familyOrCost, model);
-    const current = this.getTokens(accountIndex);
+    const cost = typeof familyOrCost === "number" ? familyOrCost : this.getModelCost(familyOrCost, model)
+    const current = this.getTokens(accountIndex)
     if (current < cost) {
-      return false;
+      return false
     }
 
     this.buckets.set(accountIndex, {
       tokens: current - cost,
       lastUpdated: Date.now(),
-    });
-    return true;
+    })
+    return true
   }
 
   /**
@@ -465,16 +469,16 @@ export class TokenBucketTracker {
    * @param model Model name
    */
   refund(accountIndex: number, familyOrCost?: string | number | null, model?: string | null): void {
-    const cost = typeof familyOrCost === "number" ? familyOrCost : this.getModelCost(familyOrCost, model);
-    const current = this.getTokens(accountIndex);
+    const cost = typeof familyOrCost === "number" ? familyOrCost : this.getModelCost(familyOrCost, model)
+    const current = this.getTokens(accountIndex)
     this.buckets.set(accountIndex, {
       tokens: Math.min(this.config.maxTokens, current + cost),
       lastUpdated: Date.now(),
-    });
+    })
   }
 
   getMaxTokens(): number {
-    return this.config.maxTokens;
+    return this.config.maxTokens
   }
 }
 
@@ -482,21 +486,21 @@ export class TokenBucketTracker {
 // SINGLETON TRACKERS
 // ============================================================================
 
-let globalTokenTracker: TokenBucketTracker | null = null;
+let globalTokenTracker: TokenBucketTracker | null = null
 
 export function getTokenTracker(): TokenBucketTracker {
   if (!globalTokenTracker) {
-    globalTokenTracker = new TokenBucketTracker();
+    globalTokenTracker = new TokenBucketTracker()
   }
-  return globalTokenTracker;
+  return globalTokenTracker
 }
 
 export function initTokenTracker(config: Partial<TokenBucketConfig>): TokenBucketTracker {
-  globalTokenTracker = new TokenBucketTracker(config);
-  return globalTokenTracker;
+  globalTokenTracker = new TokenBucketTracker(config)
+  return globalTokenTracker
 }
 
-let globalHealthTracker: HealthScoreTracker | null = null;
+let globalHealthTracker: HealthScoreTracker | null = null
 
 /**
  * Get the global health score tracker instance.
@@ -504,9 +508,9 @@ let globalHealthTracker: HealthScoreTracker | null = null;
  */
 export function getHealthTracker(): HealthScoreTracker {
   if (!globalHealthTracker) {
-    globalHealthTracker = new HealthScoreTracker();
+    globalHealthTracker = new HealthScoreTracker()
   }
-  return globalHealthTracker;
+  return globalHealthTracker
 }
 
 /**
@@ -514,6 +518,6 @@ export function getHealthTracker(): HealthScoreTracker {
  * Call this at plugin startup if custom config is needed.
  */
 export function initHealthTracker(config: Partial<HealthScoreConfig>): HealthScoreTracker {
-  globalHealthTracker = new HealthScoreTracker(config);
-  return globalHealthTracker;
+  globalHealthTracker = new HealthScoreTracker(config)
+  return globalHealthTracker
 }

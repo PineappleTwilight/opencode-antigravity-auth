@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { DEFAULT_CONFIG } from "./config"
+import { DEFAULT_CONFIG } from "./config/index.ts"
 
 const { ensureGitignoreSyncMock } = vi.hoisted(() => ({
   ensureGitignoreSyncMock: vi.fn(),
@@ -37,7 +37,7 @@ describe("debug sink policy", () => {
   })
 
   it("keeps debug_tui independent from debug in config", async () => {
-    const { initializeDebug, isDebugEnabled, isDebugTuiEnabled, getLogFilePath } = await import("./debug")
+    const { initializeDebug, isDebugEnabled, isDebugTuiEnabled, getLogFilePath } = await import("./debug.ts")
 
     initializeDebug({
       ...DEFAULT_CONFIG,
@@ -54,7 +54,7 @@ describe("debug sink policy", () => {
     process.env.OPENCODE_ANTIGRAVITY_DEBUG = "0"
     process.env.OPENCODE_ANTIGRAVITY_DEBUG_TUI = "1"
 
-    const { isDebugEnabled, isDebugTuiEnabled, getLogFilePath } = await import("./debug")
+    const { isDebugEnabled, isDebugTuiEnabled, getLogFilePath } = await import("./debug.ts")
 
     expect(isDebugEnabled()).toBe(false)
     expect(isDebugTuiEnabled()).toBe(true)
@@ -62,7 +62,7 @@ describe("debug sink policy", () => {
   })
 
   it("keeps file debug enabled without TUI when only debug is true", async () => {
-    const { initializeDebug, isDebugEnabled, isDebugTuiEnabled, getLogFilePath } = await import("./debug")
+    const { initializeDebug, isDebugEnabled, isDebugTuiEnabled, getLogFilePath } = await import("./debug.ts")
 
     initializeDebug({
       ...DEFAULT_CONFIG,

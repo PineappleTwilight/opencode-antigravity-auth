@@ -1,22 +1,22 @@
-import { ANTIGRAVITY_CLIENT_ID, ANTIGRAVITY_CLIENT_SECRET } from "../constants";
-import { formatRefreshParts, parseRefreshParts, calculateTokenExpiry } from "./auth";
-import { clearCachedAuth, storeCachedAuth } from "./cache";
-import { createLogger } from "./logger";
-import { invalidateProjectContextCache } from "./project";
-import { toast } from "./ui/toast";
-import type { OAuthAuthDetails, PluginClient, RefreshParts } from "./types";
+import { ANTIGRAVITY_CLIENT_ID, ANTIGRAVITY_CLIENT_SECRET } from "../constants.ts"
+import { formatRefreshParts, parseRefreshParts, calculateTokenExpiry } from "./auth.ts"
+import { clearCachedAuth, storeCachedAuth } from "./cache.ts"
+import { createLogger } from "./logger.ts"
+import { invalidateProjectContextCache } from "./project.ts"
+import { toast } from "./ui/toast.ts"
+import type { OAuthAuthDetails, PluginClient, RefreshParts } from "./types.ts"
 
-const log = createLogger("token");
+const log = createLogger("token")
 
 interface OAuthErrorPayload {
   error?:
     | string
     | {
-        code?: string;
-        status?: string;
-        message?: string;
-      };
-  error_description?: string;
+        code?: string
+        status?: string
+        message?: string
+      }
+  error_description?: string
 }
 
 /**
@@ -24,59 +24,59 @@ interface OAuthErrorPayload {
  */
 function parseOAuthErrorPayload(text: string | undefined): { code?: string; description?: string } {
   if (!text) {
-    return {};
+    return {}
   }
 
   try {
-    const payload = JSON.parse(text) as OAuthErrorPayload;
+    const payload = JSON.parse(text) as OAuthErrorPayload
     if (!payload || typeof payload !== "object") {
-      return { description: text };
+      return { description: text }
     }
 
-    let code: string | undefined;
+    let code: string | undefined
     if (typeof payload.error === "string") {
-      code = payload.error;
+      code = payload.error
     } else if (payload.error && typeof payload.error === "object") {
-      code = payload.error.status ?? payload.error.code;
+      code = payload.error.status ?? payload.error.code
       if (!payload.error_description && payload.error.message) {
-        return { code, description: payload.error.message };
+        return { code, description: payload.error.message }
       }
     }
 
-    const description = payload.error_description;
+    const description = payload.error_description
     if (description) {
-      return { code, description };
+      return { code, description }
     }
 
     if (payload.error && typeof payload.error === "object" && payload.error.message) {
-      return { code, description: payload.error.message };
+      return { code, description: payload.error.message }
     }
 
-    return { code };
+    return { code }
   } catch {
-    return { description: text };
+    return { description: text }
   }
 }
 
 export class AntigravityTokenRefreshError extends Error {
-  code?: string;
-  description?: string;
-  status: number;
-  statusText: string;
+  code?: string
+  description?: string
+  status: number
+  statusText: string
 
   constructor(options: {
-    message: string;
-    code?: string;
-    description?: string;
-    status: number;
-    statusText: string;
+    message: string
+    code?: string
+    description?: string
+    status: number
+    statusText: string
   }) {
-    super(options.message);
-    this.name = "AntigravityTokenRefreshError";
-    this.code = options.code;
-    this.description = options.description;
-    this.status = options.status;
-    this.statusText = options.statusText;
+    super(options.message)
+    this.name = "AntigravityTokenRefreshError"
+    this.code = options.code
+    this.description = options.description
+    this.status = options.status
+    this.statusText = options.statusText
   }
 }
 
@@ -88,17 +88,17 @@ export async function refreshAccessToken(
   client: PluginClient,
   providerId: string,
 ): Promise<OAuthAuthDetails | undefined> {
-  const parts = parseRefreshParts(auth.refresh);
+  const parts = parseRefreshParts(auth.refresh)
   if (!parts.refreshToken) {
-    return undefined;
+    return undefined
   }
 
   try {
-    const startTime = Date.now();
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout for token refresh
+    const startTime = Date.now()
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 10000)// 10s timeout for token refresh
 
-    let response: Response;
+    let response: Response
     try {
       response = await fetch("https://oauth2.googleapis.com/token", {
         method: "POST",
@@ -112,33 +112,33 @@ export async function refreshAccessToken(
           client_secret: ANTIGRAVITY_CLIENT_SECRET,
         }),
         signal: controller.signal,
-      });
+      })
     } finally {
-      clearTimeout(timeoutId);
+      clearTimeout(timeoutId)
     }
 
     if (!response.ok) {
-      let errorText: string | undefined;
+      let errorText: string | undefined
       try {
-        errorText = await response.text();
+        errorText = await response.text()
       } catch {
-        errorText = undefined;
+        errorText = undefined
       }
 
-      const { code, description } = parseOAuthErrorPayload(errorText);
-      const details = [code, description ?? errorText].filter(Boolean).join(": ");
-      const baseMessage = `Antigravity token refresh failed (${response.status} ${response.statusText})`;
-      const message = details ? `${baseMessage} - ${details}` : baseMessage;
-      log.warn("Token refresh failed", { status: response.status, code, details });
+      const { code, description } = parseOAuthErrorPayload(errorText)
+      const details = [code, description ?? errorText].filter(Boolean).join(": ")
+      const baseMessage = `Antigravity token refresh failed (${response.status} ${response.statusText})`
+      const message = details ? `${baseMessage} - ${details}` : baseMessage
+      log.warn("Token refresh failed", { status: response.status, code, details })
 
       if (code === "invalid_grant") {
-        log.warn("Google revoked the stored refresh token - reauthentication required");
+        log.warn("Google revoked the stored refresh token - reauthentication required")
         toast.error("Google session revoked - please re-authenticate", {
           title: "Antigravity",
           force: true
-        });
-        invalidateProjectContextCache(auth.refresh);
-        clearCachedAuth(auth.refresh);
+        })
+        invalidateProjectContextCache(auth.refresh)
+        clearCachedAuth(auth.refresh)
       }
 
       throw new AntigravityTokenRefreshError({
@@ -147,38 +147,38 @@ export async function refreshAccessToken(
         description: description ?? errorText,
         status: response.status,
         statusText: response.statusText,
-      });
+      })
     }
 
     const payload = (await response.json()) as {
-      access_token: string;
-      expires_in: number;
-      refresh_token?: string;
-    };
+      access_token: string
+      expires_in: number
+      refresh_token?: string
+    }
 
     const refreshedParts: RefreshParts = {
       refreshToken: payload.refresh_token ?? parts.refreshToken,
       projectId: parts.projectId,
       managedProjectId: parts.managedProjectId,
-    };
+    }
 
     const updatedAuth: OAuthAuthDetails = {
       ...auth,
       access: payload.access_token,
       expires: calculateTokenExpiry(startTime, payload.expires_in),
       refresh: formatRefreshParts(refreshedParts),
-    };
+    }
 
-    storeCachedAuth(updatedAuth);
-    invalidateProjectContextCache(auth.refresh);
+    storeCachedAuth(updatedAuth)
+    invalidateProjectContextCache(auth.refresh)
 
-    return updatedAuth;
+    return updatedAuth
   } catch (error) {
     if (error instanceof AntigravityTokenRefreshError) {
-      throw error;
+      throw error
     }
-    log.error("Unexpected token refresh error", { error: String(error) });
-    return undefined;
+    log.error("Unexpected token refresh error", { error: String(error) })
+    return undefined
   }
 }
 

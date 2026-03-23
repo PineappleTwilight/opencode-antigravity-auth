@@ -13,9 +13,9 @@
  * - A temporary service issue prevents generation
  */
 export class EmptyResponseError extends Error {
-  readonly provider: string;
-  readonly model: string;
-  readonly attempts: number;
+  readonly provider: string
+  readonly model: string
+  readonly attempts: number
 
   constructor(
     provider: string,
@@ -27,11 +27,11 @@ export class EmptyResponseError extends Error {
       message ??
         `The model returned an empty response after ${attempts} attempts. ` +
         `This may indicate a temporary service issue. Please try again.`,
-    );
-    this.name = "EmptyResponseError";
-    this.provider = provider;
-    this.model = model;
-    this.attempts = attempts;
+    )
+    this.name = "EmptyResponseError"
+    this.provider = provider
+    this.model = model
+    this.attempts = attempts
   }
 }
 
@@ -39,16 +39,16 @@ export class EmptyResponseError extends Error {
  * Error thrown when tool ID matching fails and cannot be recovered.
  */
 export class ToolIdMismatchError extends Error {
-  readonly expectedIds: string[];
-  readonly foundIds: string[];
+  readonly expectedIds: string[]
+  readonly foundIds: string[]
 
   constructor(expectedIds: string[], foundIds: string[], message?: string) {
     super(
       message ??
         `Tool ID mismatch: expected [${expectedIds.join(", ")}] but found [${foundIds.join(", ")}]`,
-    );
-    this.name = "ToolIdMismatchError";
-    this.expectedIds = expectedIds;
-    this.foundIds = foundIds;
+    )
+    this.name = "ToolIdMismatchError"
+    this.expectedIds = expectedIds
+    this.foundIds = foundIds
   }
 }

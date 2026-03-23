@@ -9,7 +9,7 @@
  * Environment variables always override config file values.
  */
 
-import { z } from "zod";
+import { z } from "zod"
 
 /**
  * Account selection strategy for distributing requests across accounts.
@@ -18,8 +18,8 @@ import { z } from "zod";
  * - `round-robin`: Rotate to next account on every request. Maximum throughput.
  * - `hybrid` (default): Deterministic selection based on health score + token bucket + LRU freshness.
  */
-export const AccountSelectionStrategySchema = z.enum(['sticky', 'round-robin', 'hybrid']);
-export type AccountSelectionStrategy = z.infer<typeof AccountSelectionStrategySchema>;
+export const AccountSelectionStrategySchema = z.enum(['sticky', 'round-robin', 'hybrid'])
+export type AccountSelectionStrategy = z.infer<typeof AccountSelectionStrategySchema>
 
 /**
  * Toast notification scope for controlling which sessions show toasts.
@@ -28,8 +28,18 @@ export type AccountSelectionStrategy = z.infer<typeof AccountSelectionStrategySc
  *   Subagents and background tasks won't show toast notifications.
  * - `all`: Show toasts for all sessions including subagents and background tasks.
  */
-export const ToastScopeSchema = z.enum(['root_only', 'all']);
-export type ToastScope = z.infer<typeof ToastScopeSchema>;
+export const ToastScopeSchema = z.enum(['root_only', 'all'])
+export type ToastScope = z.infer<typeof ToastScopeSchema>
+
+/**
+ * Toast notification verbosity levels.
+ * 
+ * - `minimal`: Errors only.
+ * - `normal` (default): Errors + Account switches + Rate limit starts.
+ * - `verbose`: All the above + Soft quota skips + Retries.
+ */
+export const ToastVerbositySchema = z.enum(['minimal', 'normal', 'verbose'])
+export type ToastVerbosity = z.infer<typeof ToastVerbositySchema>
 
 /**
  * Scheduling mode for rate limit behavior.
@@ -38,8 +48,8 @@ export type ToastScope = z.infer<typeof ToastScopeSchema>;
  * - `balance`: Switch account immediately on rate limit. Maximum availability.
  * - `performance_first`: Round-robin distribution for maximum throughput.
  */
-export const SchedulingModeSchema = z.enum(['cache_first', 'balance', 'performance_first']);
-export type SchedulingMode = z.infer<typeof SchedulingModeSchema>;
+export const SchedulingModeSchema = z.enum(['cache_first', 'balance', 'performance_first'])
+export type SchedulingMode = z.infer<typeof SchedulingModeSchema>
 
 /**
  * Signature cache configuration for persisting thinking block signatures to disk.
@@ -56,7 +66,7 @@ export const SignatureCacheConfigSchema = z.object({
   
   /** Background write interval in seconds (default: 60) */
   write_interval_seconds: z.number().min(10).max(600).default(60),
-});
+})
 
 /**
  * Main configuration schema for the Antigravity OAuth plugin.
@@ -89,6 +99,19 @@ export const AntigravityConfigSchema = z.object({
    * @default "root_only"
    */
   toast_scope: ToastScopeSchema.default('root_only'),
+
+  /**
+   * Verbosity of toast notifications.
+   * 
+   * - `minimal`: Errors only.
+   * - `normal` (default): Errors + Account switches + Rate limit starts.
+   * - `verbose`: All the above + Soft quota skips + Retries.
+   * 
+   * If `quiet_mode` is true, it effectively acts as `minimal`.
+   * Env override: OPENCODE_ANTIGRAVITY_TOAST_VERBOSITY=normal
+   * @default "normal"
+   */
+  toast_verbosity: ToastVerbositySchema.default('normal'),
   
   /**
    * Enable debug logging to file.
@@ -444,10 +467,10 @@ export const AntigravityConfigSchema = z.object({
    */
   auto_update: z.boolean().default(true),
 
-});
+})
 
-export type AntigravityConfig = z.infer<typeof AntigravityConfigSchema>;
-export type SignatureCacheConfig = z.infer<typeof SignatureCacheConfigSchema>;
+export type AntigravityConfig = z.infer<typeof AntigravityConfigSchema>
+export type SignatureCacheConfig = z.infer<typeof SignatureCacheConfigSchema>
 
 /**
  * Default configuration values.
@@ -455,6 +478,7 @@ export type SignatureCacheConfig = z.infer<typeof SignatureCacheConfigSchema>;
 export const DEFAULT_CONFIG: AntigravityConfig = {
   quiet_mode: false,
   toast_scope: 'root_only',
+  toast_verbosity: 'normal',
   debug: false,
   debug_tui: false,
   keep_thinking: false,
@@ -506,4 +530,4 @@ export const DEFAULT_CONFIG: AntigravityConfig = {
     regeneration_rate_per_minute: 6,
     initial_tokens: 50,
   },
-};
+}

@@ -1,4 +1,4 @@
-import { select } from './select';
+import { select } from './select.ts'
 
 export async function confirm(message: string, defaultYes = false): Promise<boolean> {
   const items = defaultYes
@@ -9,8 +9,8 @@ export async function confirm(message: string, defaultYes = false): Promise<bool
     : [
         { label: 'No', value: false },
         { label: 'Yes', value: true },
-      ];
+      ]
 
-  const result = await select(items, { message });
-  return result ?? false;
+  const result = await select(items, { message })
+  return result ?? false
 }

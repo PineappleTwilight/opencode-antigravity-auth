@@ -1,5 +1,6 @@
-import { exec } from "node:child_process";
-import { tool } from "@opencode-ai/plugin";
+import { exec } from "node:child_process"
+import { readFileSync } from "node:fs"
+import { tool } from "@opencode-ai/plugin"
 import {
   ANTIGRAVITY_DEFAULT_PROJECT_ID,
   ANTIGRAVITY_ENDPOINT_FALLBACKS,
@@ -7,12 +8,12 @@ import {
   ANTIGRAVITY_PROVIDER_ID,
   getAntigravityHeaders,
   type HeaderStyle,
-} from "./constants";
-import { authorizeAntigravity, exchangeAntigravity } from "./antigravity/oauth";
-import type { AntigravityTokenExchangeResult } from "./antigravity/oauth";
-import { accessTokenExpired, isOAuthAuth, parseRefreshParts, formatRefreshParts } from "./plugin/auth";
-import { promptAddAnotherAccount, promptLoginMode } from "./plugin/cli";
-import { ensureProjectContext } from "./plugin/project";
+} from "./constants.ts"
+import { authorizeAntigravity, exchangeAntigravity } from "./antigravity/oauth.ts"
+import type { AntigravityTokenExchangeResult } from "./antigravity/oauth.ts"
+import { accessTokenExpired, isOAuthAuth, parseRefreshParts, formatRefreshParts } from "./plugin/auth.ts"
+import { promptAddAnotherAccount, promptLoginMode } from "./plugin/cli.ts"
+import { ensureProjectContext } from "./plugin/project.ts"
 import {
   startAntigravityDebugRequest, 
   logAntigravityDebugResponse,
@@ -24,13 +25,13 @@ import {
   isDebugEnabled,
   getLogFilePath,
   initializeDebug,
-} from "./plugin/debug";
+} from "./plugin/debug.ts"
 import {
   buildThinkingWarmupBody,
   isGenerativeLanguageRequest,
   prepareAntigravityRequest,
   transformAntigravityResponse,
-} from "./plugin/request";
+} from "./plugin/request.ts"
 import {
   decodeEscapedText,
   normalizeGoogleVerificationUrl,
@@ -42,30 +43,31 @@ import {
   extractMessageFromRawBody,
   retryAfterMsFromResponse,
   type RateLimitBodyInfo,
-} from "./plugin/error-extraction";
-import { resolveModelWithTier } from "./plugin/transform/model-resolver";
+} from "./plugin/error-extraction.ts"
+import { resolveModelWithTier } from "./plugin/transform/model-resolver.ts"
 import {
   isEmptyResponseBody,
   createSyntheticErrorResponse,
-} from "./plugin/request-helpers";
-import { EmptyResponseError } from "./plugin/errors";
-import { AntigravityTokenRefreshError, refreshAccessToken } from "./plugin/token";
-import { startOAuthListener, type OAuthListener } from "./plugin/server";
-import { clearAccounts, loadAccounts, saveAccounts, saveAccountsReplace } from "./plugin/storage";
-import { AccountManager, type ModelFamily, parseRateLimitReason, calculateBackoffMs, computeSoftQuotaCacheTtlMs } from "./plugin/accounts";
-import { createAutoUpdateCheckerHook } from "./hooks/auto-update-checker";
-import { loadConfig, initRuntimeConfig, wasConfigCreated, getUserConfigPath, type AntigravityConfig } from "./plugin/config";
-import { createSessionRecoveryHook, getRecoverySuccessToast } from "./plugin/recovery";
-import { checkAccountsQuota } from "./plugin/quota";
-import { initDiskSignatureCache } from "./plugin/cache";
-import { createProactiveRefreshQueue, type ProactiveRefreshQueue } from "./plugin/refresh-queue";
-import { initLogger, createLogger } from "./plugin/logger";
-import { initHealthTracker, getHealthTracker, initTokenTracker, getTokenTracker } from "./plugin/rotation";
-import { getConcurrencyTracker } from "./plugin/concurrency";
-import { getSessionAccountManager } from "./plugin/sessions";
-import { initAntigravityVersion } from "./plugin/version";
-import { executeSearch } from "./plugin/search";
-import { initToastService, toast, setChildSession } from "./plugin/ui/toast";
+} from "./plugin/request-helpers.ts"
+import { EmptyResponseError } from "./plugin/errors.ts"
+import { AntigravityTokenRefreshError, refreshAccessToken } from "./plugin/token.ts"
+import { startOAuthListener, type OAuthListener } from "./plugin/server.ts"
+import { clearAccounts, loadAccounts, saveAccounts, saveAccountsReplace } from "./plugin/storage.ts"
+import { AccountManager, type ModelFamily, type RateLimitReason, parseRateLimitReason, calculateBackoffMs, computeSoftQuotaCacheTtlMs } from "./plugin/accounts.ts"
+import { ProactiveQuotaSync } from "./plugin/quota-sync.ts"
+import { createAutoUpdateCheckerHook } from "./hooks/auto-update-checker/index.ts"
+import { loadConfig, initRuntimeConfig, wasConfigCreated, getUserConfigPath, type AntigravityConfig } from "./plugin/config/index.ts"
+import { createSessionRecoveryHook, getRecoverySuccessToast } from "./plugin/recovery.ts"
+import { checkAccountsQuota } from "./plugin/quota.ts"
+import { initDiskSignatureCache } from "./plugin/cache.ts"
+import { createProactiveRefreshQueue, type ProactiveRefreshQueue } from "./plugin/refresh-queue.ts"
+import { initLogger, createLogger } from "./plugin/logger.ts"
+import { initHealthTracker, getHealthTracker, initTokenTracker, getTokenTracker } from "./plugin/rotation.ts"
+import { getConcurrencyTracker } from "./plugin/concurrency.ts"
+import { getSessionAccountManager } from "./plugin/sessions.ts"
+import { initAntigravityVersion } from "./plugin/version.ts"
+import { executeSearch } from "./plugin/search.ts"
+import { initToastService, toast, setChildSession, type ToastVerbosity } from "./plugin/ui/toast.ts"
 import type {
   GetAuth,
   LoaderResult,
@@ -74,16 +76,36 @@ import type {
   PluginResult,
   ProjectContextResult,
   Provider,
-} from "./plugin/types";
+} from "./plugin/types.ts"
 
-const MAX_OAUTH_ACCOUNTS = 10;
-const MAX_WARMUP_SESSIONS = 1000;
-const MAX_WARMUP_RETRIES = 2;
-const CAPACITY_BACKOFF_TIERS_MS = [5000, 10000, 20000, 30000, 60000];
+const MAX_OAUTH_ACCOUNTS = 10
+const MAX_WARMUP_SESSIONS = 1000
+const MAX_WARMUP_RETRIES = 2
+const CAPACITY_BACKOFF_TIERS_MS = [5000, 10000, 20000, 30000, 60000]
 
 function getCapacityBackoffDelay(consecutiveFailures: number): number {
-  const index = Math.min(consecutiveFailures, CAPACITY_BACKOFF_TIERS_MS.length - 1);
-  return CAPACITY_BACKOFF_TIERS_MS[Math.max(0, index)] ?? 5000;
+  const index = Math.min(consecutiveFailures, CAPACITY_BACKOFF_TIERS_MS.length - 1)
+  return CAPACITY_BACKOFF_TIERS_MS[Math.max(0, index)] ?? 5000
+}
+
+/**
+ * Map RateLimitReason to health score penalty.
+ */
+function getPenaltyForReason(reason: RateLimitReason): number {
+  switch (reason) {
+    case "QUOTA_EXHAUSTED":
+      return -15
+    case "ACCESS_DENIED":
+      return -50
+    case "VERIFICATION_REQUIRED":
+      return -50
+    case "SAFETY_BLOCKED":
+      return -30
+    case "RATE_LIMIT_EXCEEDED":
+      return -10
+    default:
+      return -10
+  }
 }
 
 /**
@@ -91,229 +113,142 @@ function getCapacityBackoffDelay(consecutiveFailures: number): number {
  */
 function preparedRequestSessionId(input: RequestInfo): string | undefined {
   try {
-    const bodyText = (input as Request).body ? (input as any)._bodyText : undefined;
+    const bodyText = (input as Request).body ? (input as any)._bodyText : undefined
     if (bodyText) {
-      const payload = JSON.parse(bodyText);
-      return payload.sessionId;
+      const payload = JSON.parse(bodyText)
+      return payload.sessionId
     }
   } catch {
     // ignore
   }
-  return undefined;
+  return undefined
 }
-const warmupAttemptedSessionIds = new Set<string>();
-const warmupSucceededSessionIds = new Set<string>();
+const warmupAttemptedSessionIds = new Set<string>()
+const warmupSucceededSessionIds = new Set<string>()
 
-const log = createLogger("plugin");
-
-// Module-level toast debounce to persist across requests (fixes toast spam)
-const rateLimitToastCooldowns = new Map<string, number>();
-const RATE_LIMIT_TOAST_COOLDOWN_MS = 5000;
-const MAX_TOAST_COOLDOWN_ENTRIES = 100;
-
-// Track if "all accounts blocked" toasts were shown to prevent spam in while loop
-let softQuotaToastShown = false;
-let rateLimitToastShown = false;
+const log = createLogger("plugin")
 
 // Module-level reference to AccountManager for access from auth.login
-let activeAccountManager: import("./plugin/accounts").AccountManager | null = null;
-
-function cleanupToastCooldowns(): void {
-  if (rateLimitToastCooldowns.size > MAX_TOAST_COOLDOWN_ENTRIES) {
-    const now = Date.now();
-    for (const [key, time] of rateLimitToastCooldowns) {
-      if (now - time > RATE_LIMIT_TOAST_COOLDOWN_MS * 2) {
-        rateLimitToastCooldowns.delete(key);
-      }
-    }
-  }
-}
-
-function shouldShowRateLimitToast(message: string): boolean {
-  cleanupToastCooldowns();
-  const toastKey = message.replace(/\d+/g, "X");
-  const lastShown = rateLimitToastCooldowns.get(toastKey) ?? 0;
-  const now = Date.now();
-  if (now - lastShown < RATE_LIMIT_TOAST_COOLDOWN_MS) {
-    return false;
-  }
-  rateLimitToastCooldowns.set(toastKey, now);
-  return true;
-}
-
-function resetAllAccountsBlockedToasts(): void {
-  softQuotaToastShown = false;
-  rateLimitToastShown = false;
-}
-
-const quotaRefreshInProgressByEmail = new Set<string>();
-
-async function triggerAsyncQuotaRefreshForAccount(
-  accountManager: AccountManager,
-  accountIndex: number,
-  client: PluginClient,
-  providerId: string,
-  intervalMinutes: number,
-): Promise<void> {
-  if (intervalMinutes <= 0) return;
-  
-  const accounts = accountManager.getAccounts();
-  const account = accounts[accountIndex];
-  if (!account || account.enabled === false) return;
-  
-  const accountKey = account.email ?? `idx-${accountIndex}`;
-  if (quotaRefreshInProgressByEmail.has(accountKey)) return;
-  
-  const intervalMs = intervalMinutes * 60 * 1000;
-  const age = account.cachedQuotaUpdatedAt != null 
-    ? Date.now() - account.cachedQuotaUpdatedAt 
-    : Infinity;
-  
-  if (age < intervalMs) return;
-  
-  quotaRefreshInProgressByEmail.add(accountKey);
-  
-  try {
-    const accountsForCheck = accountManager.getAccountsForQuotaCheck();
-    const singleAccount = accountsForCheck[accountIndex];
-    if (!singleAccount) {
-      quotaRefreshInProgressByEmail.delete(accountKey);
-      return;
-    }
-    
-    const results = await checkAccountsQuota([singleAccount], client, providerId);
-    
-    if (results[0]?.status === "ok" && results[0]?.quota?.groups) {
-      accountManager.updateQuotaCache(accountIndex, results[0].quota.groups);
-      accountManager.requestSaveToDisk();
-    }
-  } catch (err) {
-    log.debug(`quota-refresh-failed email=${accountKey}`, { error: String(err) });
-  } finally {
-    quotaRefreshInProgressByEmail.delete(accountKey);
-  }
-}
+let activeAccountManager: import("./plugin/accounts.ts").AccountManager | null = null
 
 function trackWarmupAttempt(sessionId: string): boolean {
   if (warmupSucceededSessionIds.has(sessionId)) {
-    return false;
+    return false
   }
   if (warmupAttemptedSessionIds.size >= MAX_WARMUP_SESSIONS) {
-    const first = warmupAttemptedSessionIds.values().next().value;
+    const first = warmupAttemptedSessionIds.values().next().value
     if (first) {
-      warmupAttemptedSessionIds.delete(first);
-      warmupSucceededSessionIds.delete(first);
+      warmupAttemptedSessionIds.delete(first)
+      warmupSucceededSessionIds.delete(first)
     }
   }
-  const attempts = getWarmupAttemptCount(sessionId);
+  const attempts = getWarmupAttemptCount(sessionId)
   if (attempts >= MAX_WARMUP_RETRIES) {
-    return false;
+    return false
   }
-  warmupAttemptedSessionIds.add(sessionId);
-  return true;
+  warmupAttemptedSessionIds.add(sessionId)
+  return true
 }
 
 function getWarmupAttemptCount(sessionId: string): number {
-  return warmupAttemptedSessionIds.has(sessionId) ? 1 : 0;
+  return warmupAttemptedSessionIds.has(sessionId) ? 1 : 0
 }
 
 function markWarmupSuccess(sessionId: string): void {
-  warmupSucceededSessionIds.add(sessionId);
+  warmupSucceededSessionIds.add(sessionId)
   if (warmupSucceededSessionIds.size >= MAX_WARMUP_SESSIONS) {
-    const first = warmupSucceededSessionIds.values().next().value;
-    if (first) warmupSucceededSessionIds.delete(first);
+    const first = warmupSucceededSessionIds.values().next().value
+    if (first) warmupSucceededSessionIds.delete(first)
   }
 }
 
 function clearWarmupAttempt(sessionId: string): void {
-  warmupAttemptedSessionIds.delete(sessionId);
+  warmupAttemptedSessionIds.delete(sessionId)
 }
 
 function isWSL(): boolean {
-  if (process.platform !== "linux") return false;
+  if (process.platform !== "linux") return false
   try {
-    const { readFileSync } = require("node:fs");
-    const release = readFileSync("/proc/version", "utf8").toLowerCase();
-    return release.includes("microsoft") || release.includes("wsl");
+    const release = readFileSync("/proc/version", "utf8").toLowerCase()
+    return release.includes("microsoft") || release.includes("wsl")
   } catch {
-    return false;
+    return false
   }
 }
 
 function isWSL2(): boolean {
-  if (!isWSL()) return false;
+  if (!isWSL()) return false
   try {
-    const { readFileSync } = require("node:fs");
-    const version = readFileSync("/proc/version", "utf8").toLowerCase();
-    return version.includes("wsl2") || version.includes("microsoft-standard");
+    const version = readFileSync("/proc/version", "utf8").toLowerCase()
+    return version.includes("wsl2") || version.includes("microsoft-standard")
   } catch {
-    return false;
+    return false
   }
 }
 
 function isRemoteEnvironment(): boolean {
   if (process.env.SSH_CLIENT || process.env.SSH_TTY || process.env.SSH_CONNECTION) {
-    return true;
+    return true
   }
   if (process.env.REMOTE_CONTAINERS || process.env.CODESPACES) {
-    return true;
+    return true
   }
   if (process.platform === "linux" && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY && !isWSL()) {
-    return true;
+    return true
   }
-  return false;
+  return false
 }
 
 function shouldSkipLocalServer(): boolean {
-  return isWSL2() || isRemoteEnvironment();
+  return isWSL2() || isRemoteEnvironment()
 }
 
 async function openBrowser(url: string): Promise<boolean> {
   try {
     if (process.platform === "darwin") {
-      exec(`open "${url}"`);
-      return true;
+      exec(`open "${url}"`)
+      return true
     }
     if (process.platform === "win32") {
-      exec(`start "" "${url}"`);
-      return true;
+      exec(`start "" "${url}"`)
+      return true
     }
     if (isWSL()) {
       try {
-        exec(`wslview "${url}"`);
-        return true;
+        exec(`wslview "${url}"`)
+        return true
       } catch {}
     }
     if (!process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) {
-      return false;
+      return false
     }
-    exec(`xdg-open "${url}"`);
-    return true;
+    exec(`xdg-open "${url}"`)
+    return true
   } catch {
-    return false;
+    return false
   }
 }
 
 type VerificationProbeResult = {
-  status: "ok" | "blocked" | "error";
-  message: string;
-  verifyUrl?: string;
-};
+  status: "ok" | "blocked" | "error"
+  message: string
+  verifyUrl?: string
+}
 
 
 async function verifyAccountAccess(
   account: {
-    refreshToken: string;
-    email?: string;
-    projectId?: string;
-    managedProjectId?: string;
+    refreshToken: string
+    email?: string
+    projectId?: string
+    managedProjectId?: string
   },
   client: PluginClient,
   providerId: string,
 ): Promise<VerificationProbeResult> {
-  const parsed = parseRefreshParts(account.refreshToken);
+  const parsed = parseRefreshParts(account.refreshToken)
   if (!parsed.refreshToken) {
-    return { status: "error", message: "Missing refresh token for selected account." };
+    return { status: "error", message: "Missing refresh token for selected account." }
   }
 
   const auth = {
@@ -325,20 +260,20 @@ async function verifyAccountAccess(
     }),
     access: "",
     expires: 0,
-  };
+  }
 
-  let refreshedAuth: Awaited<ReturnType<typeof refreshAccessToken>>;
+  let refreshedAuth: Awaited<ReturnType<typeof refreshAccessToken>>
   try {
-    refreshedAuth = await refreshAccessToken(auth, client, providerId);
+    refreshedAuth = await refreshAccessToken(auth, client, providerId)
   } catch (error) {
     if (error instanceof AntigravityTokenRefreshError) {
-      return { status: "error", message: error.message };
+      return { status: "error", message: error.message }
     }
-    return { status: "error", message: `Token refresh failed: ${String(error)}` };
+    return { status: "error", message: `Token refresh failed: ${String(error)}` }
   }
 
   if (!refreshedAuth?.access) {
-    return { status: "error", message: "Could not refresh access token for this account." };
+    return { status: "error", message: "Could not refresh access token for this account." }
   }
 
   const projectId =
@@ -346,15 +281,15 @@ async function verifyAccountAccess(
     parsed.projectId ??
     account.managedProjectId ??
     account.projectId ??
-    ANTIGRAVITY_DEFAULT_PROJECT_ID;
+    ANTIGRAVITY_DEFAULT_PROJECT_ID
 
   const headers: Record<string, string> = {
     ...getAntigravityHeaders(),
     Authorization: `Bearer ${refreshedAuth.access}`,
     "Content-Type": "application/json",
-  };
+  }
   if (projectId) {
-    headers["x-goog-user-project"] = projectId;
+    headers["x-goog-user-project"] = projectId
   }
 
   const requestBody = {
@@ -364,259 +299,259 @@ async function verifyAccountAccess(
       contents: [{ role: "user", parts: [{ text: "ping" }] }],
       generationConfig: { maxOutputTokens: 1, temperature: 0 },
     },
-  };
+  }
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 20000);
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 20000)
 
-  let response: Response;
+  let response: Response
   try {
     response = await fetch(`${ANTIGRAVITY_ENDPOINT_PROD}/v1internal:streamGenerateContent?alt=sse`, {
       method: "POST",
       headers,
       body: JSON.stringify(requestBody),
       signal: controller.signal,
-    });
+    })
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
-      return { status: "error", message: "Verification check timed out." };
+      return { status: "error", message: "Verification check timed out." }
     }
-    return { status: "error", message: `Verification check failed: ${String(error)}` };
+    return { status: "error", message: `Verification check failed: ${String(error)}` }
   } finally {
-    clearTimeout(timeoutId);
+    clearTimeout(timeoutId)
   }
 
-  let responseBody = "";
+  let responseBody = ""
   try {
-    responseBody = await response.text();
+    responseBody = await response.text()
   } catch {
-    responseBody = "";
+    responseBody = ""
   }
 
   if (response.ok) {
-    return { status: "ok", message: "Account verification check passed." };
+    return { status: "ok", message: "Account verification check passed." }
   }
 
-  const extracted = extractVerificationErrorDetails(responseBody);
+  const extracted = extractVerificationErrorDetails(responseBody)
   if (response.status === 403 && extracted.validationRequired) {
     return {
       status: "blocked",
       message: extracted.message ?? "Google requires additional account verification.",
       verifyUrl: extracted.verifyUrl,
-    };
+    }
   }
 
-  const fallbackMessage = extracted.message ?? `Request failed (${response.status} ${response.statusText}).`;
+  const fallbackMessage = extracted.message ?? `Request failed (${response.status} ${response.statusText}).`
   return {
     status: "error",
     message: fallbackMessage,
-  };
+  }
 }
 
 async function promptAccountIndexForVerification(
   accounts: Array<{ email?: string; index: number }>,
 ): Promise<number | undefined> {
-  const { createInterface } = await import("node:readline/promises");
-  const { stdin, stdout } = await import("node:process");
-  const rl = createInterface({ input: stdin, output: stdout });
+  const { createInterface } = await import("node:readline/promises")
+  const { stdin, stdout } = await import("node:process")
+  const rl = createInterface({ input: stdin, output: stdout })
   try {
-    console.log("\nSelect an account to verify:");
+    console.log("\nSelect an account to verify:")
     for (const account of accounts) {
-      const label = account.email || `Account ${account.index + 1}`;
-      console.log(`  ${account.index + 1}. ${label}`);
+      const label = account.email || `Account ${account.index + 1}`
+      console.log(`  ${account.index + 1}. ${label}`)
     }
-    console.log("");
+    console.log("")
 
     while (true) {
-      const answer = (await rl.question("Account number (leave blank to cancel): ")).trim();
+      const answer = (await rl.question("Account number (leave blank to cancel): ")).trim()
       if (!answer) {
-        return undefined;
+        return undefined
       }
-      const parsedIndex = Number(answer);
+      const parsedIndex = Number(answer)
       if (!Number.isInteger(parsedIndex)) {
-        console.log("Please enter a valid account number.");
-        continue;
+        console.log("Please enter a valid account number.")
+        continue
       }
-      const normalizedIndex = parsedIndex - 1;
-      const selected = accounts.find((account) => account.index === normalizedIndex);
+      const normalizedIndex = parsedIndex - 1
+      const selected = accounts.find((account) => account.index === normalizedIndex)
       if (!selected) {
-        console.log("Please enter a number from the list above.");
-        continue;
+        console.log("Please enter a number from the list above.")
+        continue
       }
-      return selected.index;
+      return selected.index
     }
   } finally {
-    rl.close();
+    rl.close()
   }
 }
 
 async function promptOpenVerificationUrl(): Promise<boolean> {
-  const answer = (await promptOAuthCallbackValue("Open verification URL in your browser now? [Y/n]: ")).trim().toLowerCase();
-  return answer === "" || answer === "y" || answer === "yes";
+  const answer = (await promptOAuthCallbackValue("Open verification URL in your browser now? [Y/n]: ")).trim().toLowerCase()
+  return answer === "" || answer === "y" || answer === "yes"
 }
 
 type VerificationStoredAccount = {
-  enabled?: boolean;
-  verificationRequired?: boolean;
-  verificationRequiredAt?: number;
-  verificationRequiredReason?: string;
-  verificationUrl?: string;
-};
+  enabled?: boolean
+  verificationRequired?: boolean
+  verificationRequiredAt?: number
+  verificationRequiredReason?: string
+  verificationUrl?: string
+}
 
 function markStoredAccountVerificationRequired(
   account: VerificationStoredAccount,
   reason: string,
   verifyUrl?: string,
 ): boolean {
-  let changed = false;
-  const wasVerificationRequired = account.verificationRequired === true;
+  let changed = false
+  const wasVerificationRequired = account.verificationRequired === true
 
   if (!wasVerificationRequired) {
-    account.verificationRequired = true;
-    changed = true;
+    account.verificationRequired = true
+    changed = true
   }
 
   if (!wasVerificationRequired || account.verificationRequiredAt === undefined) {
-    account.verificationRequiredAt = Date.now();
-    changed = true;
+    account.verificationRequiredAt = Date.now()
+    changed = true
   }
 
-  const normalizedReason = reason.trim();
+  const normalizedReason = reason.trim()
   if (account.verificationRequiredReason !== normalizedReason) {
-    account.verificationRequiredReason = normalizedReason;
-    changed = true;
+    account.verificationRequiredReason = normalizedReason
+    changed = true
   }
 
-  const normalizedUrl = verifyUrl?.trim();
+  const normalizedUrl = verifyUrl?.trim()
   if (normalizedUrl && account.verificationUrl !== normalizedUrl) {
-    account.verificationUrl = normalizedUrl;
-    changed = true;
+    account.verificationUrl = normalizedUrl
+    changed = true
   }
 
   if (account.enabled !== false) {
-    account.enabled = false;
-    changed = true;
+    account.enabled = false
+    changed = true
   }
 
-  return changed;
+  return changed
 }
 
 function clearStoredAccountVerificationRequired(
   account: VerificationStoredAccount,
   enableIfRequired = false,
 ): { changed: boolean; wasVerificationRequired: boolean } {
-  const wasVerificationRequired = account.verificationRequired === true;
-  let changed = false;
+  const wasVerificationRequired = account.verificationRequired === true
+  let changed = false
 
   if (account.verificationRequired !== false) {
-    account.verificationRequired = false;
-    changed = true;
+    account.verificationRequired = false
+    changed = true
   }
   if (account.verificationRequiredAt !== undefined) {
-    account.verificationRequiredAt = undefined;
-    changed = true;
+    account.verificationRequiredAt = undefined
+    changed = true
   }
   if (account.verificationRequiredReason !== undefined) {
-    account.verificationRequiredReason = undefined;
-    changed = true;
+    account.verificationRequiredReason = undefined
+    changed = true
   }
   if (account.verificationUrl !== undefined) {
-    account.verificationUrl = undefined;
-    changed = true;
+    account.verificationUrl = undefined
+    changed = true
   }
 
   if (enableIfRequired && wasVerificationRequired && account.enabled === false) {
-    account.enabled = true;
-    changed = true;
+    account.enabled = true
+    changed = true
   }
 
-  return { changed, wasVerificationRequired };
+  return { changed, wasVerificationRequired }
 }
 
 async function promptOAuthCallbackValue(message: string): Promise<string> {
-  const { createInterface } = await import("node:readline/promises");
-  const { stdin, stdout } = await import("node:process");
-  const rl = createInterface({ input: stdin, output: stdout });
+  const { createInterface } = await import("node:readline/promises")
+  const { stdin, stdout } = await import("node:process")
+  const rl = createInterface({ input: stdin, output: stdout })
   try {
-    return (await rl.question(message)).trim();
+    return (await rl.question(message)).trim()
   } finally {
-    rl.close();
+    rl.close()
   }
 }
 
-type OAuthCallbackParams = { code: string; state: string };
+type OAuthCallbackParams = { code: string; state: string }
 
 function getStateFromAuthorizationUrl(authorizationUrl: string): string {
   try {
-    return new URL(authorizationUrl).searchParams.get("state") ?? "";
+    return new URL(authorizationUrl).searchParams.get("state") ?? ""
   } catch {
-    return "";
+    return ""
   }
 }
 
 function extractOAuthCallbackParams(url: URL): OAuthCallbackParams | null {
-  const code = url.searchParams.get("code");
-  const state = url.searchParams.get("state");
+  const code = url.searchParams.get("code")
+  const state = url.searchParams.get("state")
   if (!code || !state) {
-    return null;
+    return null
   }
-  return { code, state };
+  return { code, state }
 }
 
 function parseOAuthCallbackInput(
   value: string,
   fallbackState: string,
 ): OAuthCallbackParams | { error: string } {
-  const trimmed = value.trim();
+  const trimmed = value.trim()
   if (!trimmed) {
-    return { error: "Missing authorization code" };
+    return { error: "Missing authorization code" }
   }
 
   try {
-    const url = new URL(trimmed);
-    const code = url.searchParams.get("code");
-    const state = url.searchParams.get("state") ?? fallbackState;
+    const url = new URL(trimmed)
+    const code = url.searchParams.get("code")
+    const state = url.searchParams.get("state") ?? fallbackState
 
     if (!code) {
-      return { error: "Missing code in callback URL" };
+      return { error: "Missing code in callback URL" }
     }
     if (!state) {
-      return { error: "Missing state in callback URL" };
+      return { error: "Missing state in callback URL" }
     }
 
-    return { code, state };
+    return { code, state }
   } catch {
     if (!fallbackState) {
-      return { error: "Missing state. Paste the full redirect URL instead of only the code." };
+      return { error: "Missing state. Paste the full redirect URL instead of only the code." }
     }
 
-    return { code: trimmed, state: fallbackState };
+    return { code: trimmed, state: fallbackState }
   }
 }
 
 async function promptManualOAuthInput(
   fallbackState: string,
 ): Promise<AntigravityTokenExchangeResult> {
-  console.log("1. Open the URL above in your browser and complete Google sign-in.");
-  console.log("2. After approving, copy the full redirected localhost URL from the address bar.");
-  console.log("3. Paste it back here.\n");
+  console.log("1. Open the URL above in your browser and complete Google sign-in.")
+  console.log("2. After approving, copy the full redirected localhost URL from the address bar.")
+  console.log("3. Paste it back here.\n")
 
   const callbackInput = await promptOAuthCallbackValue(
     "Paste the redirect URL (or just the code) here: ",
-  );
-  const params = parseOAuthCallbackInput(callbackInput, fallbackState);
+  )
+  const params = parseOAuthCallbackInput(callbackInput, fallbackState)
   if ("error" in params) {
-    return { type: "failed", error: params.error };
+    return { type: "failed", error: params.error }
   }
 
-  return exchangeAntigravity(params.code, params.state);
+  return exchangeAntigravity(params.code, params.state)
 }
 
 function clampInt(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) {
-    return min;
+    return min
   }
-  return Math.min(max, Math.max(min, Math.floor(value)));
+  return Math.min(max, Math.max(min, Math.floor(value)))
 }
 
 async function persistAccountPool(
@@ -624,48 +559,48 @@ async function persistAccountPool(
   replaceAll: boolean = false,
 ): Promise<void> {
   if (results.length === 0) {
-    return;
+    return
   }
 
-  const now = Date.now();
+  const now = Date.now()
   
   // If replaceAll is true (fresh login), start with empty accounts
   // Otherwise, load existing accounts and merge
-  const stored = replaceAll ? null : await loadAccounts();
-  const accounts = stored?.accounts ? [...stored.accounts] : [];
+  const stored = replaceAll ? null : await loadAccounts()
+  const accounts = stored?.accounts ? [...stored.accounts] : []
 
-  const indexByRefreshToken = new Map<string, number>();
-  const indexByEmail = new Map<string, number>();
+  const indexByRefreshToken = new Map<string, number>()
+  const indexByEmail = new Map<string, number>()
   for (let i = 0; i < accounts.length; i++) {
-    const acc = accounts[i];
+    const acc = accounts[i]
     if (acc?.refreshToken) {
-      indexByRefreshToken.set(acc.refreshToken, i);
+      indexByRefreshToken.set(acc.refreshToken, i)
     }
     if (acc?.email) {
-      indexByEmail.set(acc.email, i);
+      indexByEmail.set(acc.email, i)
     }
   }
 
   for (const result of results) {
-    const parts = parseRefreshParts(result.refresh);
+    const parts = parseRefreshParts(result.refresh)
     if (!parts.refreshToken) {
-      continue;
+      continue
     }
 
     // First, check for existing account by email (prevents duplicates when refresh token changes)
     // Only use email-based deduplication if the new account has an email
-    const existingByEmail = result.email ? indexByEmail.get(result.email) : undefined;
-    const existingByToken = indexByRefreshToken.get(parts.refreshToken);
+    const existingByEmail = result.email ? indexByEmail.get(result.email) : undefined
+    const existingByToken = indexByRefreshToken.get(parts.refreshToken)
     
     // Prefer email-based match to handle refresh token rotation
-    const existingIndex = existingByEmail ?? existingByToken;
+    const existingIndex = existingByEmail ?? existingByToken
     
     if (existingIndex === undefined) {
       // New account - add it
-      const newIndex = accounts.length;
-      indexByRefreshToken.set(parts.refreshToken, newIndex);
+      const newIndex = accounts.length
+      indexByRefreshToken.set(parts.refreshToken, newIndex)
       if (result.email) {
-        indexByEmail.set(result.email, newIndex);
+        indexByEmail.set(result.email, newIndex)
       }
       accounts.push({
         email: result.email,
@@ -675,18 +610,18 @@ async function persistAccountPool(
         addedAt: now,
         lastUsed: now,
         enabled: true,
-      });
-      continue;
+      })
+      continue
     }
 
-    const existing = accounts[existingIndex];
+    const existing = accounts[existingIndex]
     if (!existing) {
-      continue;
+      continue
     }
 
     // Update existing account (this handles both email match and token match cases)
     // When email matches but token differs, this effectively replaces the old token
-    const oldToken = existing.refreshToken;
+    const oldToken = existing.refreshToken
     accounts[existingIndex] = {
       ...existing,
       email: result.email ?? existing.email,
@@ -694,23 +629,23 @@ async function persistAccountPool(
       projectId: parts.projectId ?? existing.projectId,
       managedProjectId: parts.managedProjectId ?? existing.managedProjectId,
       lastUsed: now,
-    };
+    }
     
     // Update the token index if the token changed
     if (oldToken !== parts.refreshToken) {
-      indexByRefreshToken.delete(oldToken);
-      indexByRefreshToken.set(parts.refreshToken, existingIndex);
+      indexByRefreshToken.delete(oldToken)
+      indexByRefreshToken.set(parts.refreshToken, existingIndex)
     }
   }
 
   if (accounts.length === 0) {
-    return;
+    return
   }
 
   // For fresh logins, always start at index 0
   const activeIndex = replaceAll 
     ? 0 
-    : (typeof stored?.activeIndex === "number" && Number.isFinite(stored.activeIndex) ? stored.activeIndex : 0);
+    : (typeof stored?.activeIndex === "number" && Number.isFinite(stored.activeIndex) ? stored.activeIndex : 0)
 
   await saveAccounts({
     version: 4,
@@ -720,20 +655,20 @@ async function persistAccountPool(
       claude: clampInt(activeIndex, 0, accounts.length - 1),
       gemini: clampInt(activeIndex, 0, accounts.length - 1),
     },
-  });
+  })
 }
 
 function buildAuthSuccessFromStoredAccount(account: {
-  refreshToken: string;
-  projectId?: string;
-  managedProjectId?: string;
-  email?: string;
+  refreshToken: string
+  projectId?: string
+  managedProjectId?: string
+  email?: string
 }): Extract<AntigravityTokenExchangeResult, { type: "success" }> {
   const refresh = formatRefreshParts({
     refreshToken: account.refreshToken,
     projectId: account.projectId,
     managedProjectId: account.managedProjectId,
-  });
+  })
 
   return {
     type: "success",
@@ -742,26 +677,26 @@ function buildAuthSuccessFromStoredAccount(account: {
     expires: 0,
     email: account.email,
     projectId: account.projectId ?? "",
-  };
+  }
 }
 
 function formatWaitTime(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  const seconds = Math.ceil(ms / 1000);
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
+  if (ms < 1000) return `${ms}ms`
+  const seconds = Math.ceil(ms / 1000)
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  const remainingSeconds = seconds % 60
   if (minutes < 60) {
-    return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
+    return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`
   }
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes % 60;
-  return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
+  const hours = Math.floor(minutes / 60)
+  const remainingMinutes = minutes % 60
+  return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`
 }
 
 // Progressive rate limit retry delays
-const FIRST_RETRY_DELAY_MS = 1000;      // 1s - first 429 quick retry on same account
-const SWITCH_ACCOUNT_DELAY_MS = 5000;   // 5s - delay before switching to another account
+const FIRST_RETRY_DELAY_MS = 1000// 1s - first 429 quick retry on same account
+const SWITCH_ACCOUNT_DELAY_MS = 5000// 5s - delay before switching to another account
 
 /**
  * Rate limit state tracking with time-window deduplication.
@@ -773,20 +708,20 @@ const SWITCH_ACCOUNT_DELAY_MS = 5000;   // 5s - delay before switching to anothe
  * Solution: Track per account+quota with deduplication window. Multiple 429s
  * within RATE_LIMIT_DEDUP_WINDOW_MS are treated as a single event.
  */
-const RATE_LIMIT_DEDUP_WINDOW_MS = 2000; // 2 seconds - concurrent requests within this window are deduplicated
-const RATE_LIMIT_STATE_RESET_MS = 120_000; // Reset consecutive counter after 2 minutes of no 429s
+const RATE_LIMIT_DEDUP_WINDOW_MS = 2000// 2 seconds - concurrent requests within this window are deduplicated
+const RATE_LIMIT_STATE_RESET_MS = 120_000// Reset consecutive counter after 2 minutes of no 429s
 
 interface RateLimitState {
-  consecutive429: number;
-  lastAt: number;
-  quotaKey: string; // Track which quota this state is for
+  consecutive429: number
+  lastAt: number
+  quotaKey: string// Track which quota this state is for
 }
 
 // Key format: `${accountIndex}:${quotaKey}` for per-account-per-quota tracking
-const rateLimitStateByAccountQuota = new Map<string, RateLimitState>();
+const rateLimitStateByAccountQuota = new Map<string, RateLimitState>()
 
 // Track empty response retry attempts (ported from LLM-API-Key-Proxy)
-const emptyResponseAttempts = new Map<string, number>();
+const emptyResponseAttempts = new Map<string, number>()
 
 /**
  * Get rate limit backoff with time-window deduplication.
@@ -803,36 +738,36 @@ function getRateLimitBackoff(
   serverRetryAfterMs: number | null,
   maxBackoffMs: number = 60_000
 ): { attempt: number; delayMs: number; isDuplicate: boolean } {
-  const now = Date.now();
-  const stateKey = `${accountIndex}:${quotaKey}`;
-  const previous = rateLimitStateByAccountQuota.get(stateKey);
+  const now = Date.now()
+  const stateKey = `${accountIndex}:${quotaKey}`
+  const previous = rateLimitStateByAccountQuota.get(stateKey)
   
   // Check if this is a duplicate 429 within the dedup window
   if (previous && (now - previous.lastAt < RATE_LIMIT_DEDUP_WINDOW_MS)) {
     // Same rate limit event from concurrent request - don't increment
-    const baseDelay = serverRetryAfterMs ?? 1000;
-    const backoffDelay = Math.min(baseDelay * Math.pow(2, previous.consecutive429 - 1), maxBackoffMs);
+    const baseDelay = serverRetryAfterMs ?? 1000
+    const backoffDelay = Math.min(baseDelay * Math.pow(2, previous.consecutive429 - 1), maxBackoffMs)
     return { 
       attempt: previous.consecutive429, 
       delayMs: Math.max(baseDelay, backoffDelay),
       isDuplicate: true 
-    };
+    }
   }
   
   // Check if we should reset (no 429 for 2 minutes) or increment
   const attempt = previous && (now - previous.lastAt < RATE_LIMIT_STATE_RESET_MS) 
     ? previous.consecutive429 + 1 
-    : 1;
+    : 1
   
   rateLimitStateByAccountQuota.set(stateKey, { 
     consecutive429: attempt, 
     lastAt: now,
     quotaKey 
-  });
+  })
   
-  const baseDelay = serverRetryAfterMs ?? 1000;
-  const backoffDelay = Math.min(baseDelay * Math.pow(2, attempt - 1), maxBackoffMs);
-  return { attempt, delayMs: Math.max(baseDelay, backoffDelay), isDuplicate: false };
+  const baseDelay = serverRetryAfterMs ?? 1000
+  const backoffDelay = Math.min(baseDelay * Math.pow(2, attempt - 1), maxBackoffMs)
+  return { attempt, delayMs: Math.max(baseDelay, backoffDelay), isDuplicate: false }
 }
 
 /**
@@ -840,8 +775,8 @@ function getRateLimitBackoff(
  * Only resets the specific quota, not all quotas for the account.
  */
 function resetRateLimitState(accountIndex: number, quotaKey: string): void {
-  const stateKey = `${accountIndex}:${quotaKey}`;
-  rateLimitStateByAccountQuota.delete(stateKey);
+  const stateKey = `${accountIndex}:${quotaKey}`
+  rateLimitStateByAccountQuota.delete(stateKey)
 }
 
 /**
@@ -851,41 +786,41 @@ function resetRateLimitState(accountIndex: number, quotaKey: string): void {
 function resetAllRateLimitStateForAccount(accountIndex: number): void {
   for (const key of rateLimitStateByAccountQuota.keys()) {
     if (key.startsWith(`${accountIndex}:`)) {
-      rateLimitStateByAccountQuota.delete(key);
+      rateLimitStateByAccountQuota.delete(key)
     }
   }
 }
 
 function headerStyleToQuotaKey(headerStyle: HeaderStyle, family: ModelFamily): string {
-  if (family === "claude") return "claude";
-  return headerStyle === "antigravity" ? "gemini-antigravity" : "gemini-cli";
+  if (family === "claude") return "claude"
+  return headerStyle === "antigravity" ? "gemini-antigravity" : "gemini-cli"
 }
 
 // Track consecutive non-429 failures per account to prevent infinite loops
-const accountFailureState = new Map<number, { consecutiveFailures: number; lastFailureAt: number }>();
-const MAX_CONSECUTIVE_FAILURES = 5;
-const FAILURE_COOLDOWN_MS = 30_000; // 30 seconds cooldown after max failures
-const FAILURE_STATE_RESET_MS = 120_000; // Reset failure count after 2 minutes of no failures
+const accountFailureState = new Map<number, { consecutiveFailures: number; lastFailureAt: number }>()
+const MAX_CONSECUTIVE_FAILURES = 5
+const FAILURE_COOLDOWN_MS = 30_000// 30 seconds cooldown after max failures
+const FAILURE_STATE_RESET_MS = 120_000// Reset failure count after 2 minutes of no failures
 
 function trackAccountFailure(accountIndex: number): { failures: number; shouldCooldown: boolean; cooldownMs: number } {
-  const now = Date.now();
-  const previous = accountFailureState.get(accountIndex);
+  const now = Date.now()
+  const previous = accountFailureState.get(accountIndex)
   
   // Reset if last failure was more than 2 minutes ago
   const failures = previous && (now - previous.lastFailureAt < FAILURE_STATE_RESET_MS) 
     ? previous.consecutiveFailures + 1 
-    : 1;
+    : 1
   
-  accountFailureState.set(accountIndex, { consecutiveFailures: failures, lastFailureAt: now });
+  accountFailureState.set(accountIndex, { consecutiveFailures: failures, lastFailureAt: now })
   
-  const shouldCooldown = failures >= MAX_CONSECUTIVE_FAILURES;
-  const cooldownMs = shouldCooldown ? FAILURE_COOLDOWN_MS : 0;
+  const shouldCooldown = failures >= MAX_CONSECUTIVE_FAILURES
+  const cooldownMs = shouldCooldown ? FAILURE_COOLDOWN_MS : 0
   
-  return { failures, shouldCooldown, cooldownMs };
+  return { failures, shouldCooldown, cooldownMs }
 }
 
 function resetAccountFailureState(accountIndex: number): void {
-  accountFailureState.delete(accountIndex);
+  accountFailureState.delete(accountIndex)
 }
 
 /**
@@ -894,27 +829,27 @@ function resetAccountFailureState(accountIndex: number): void {
 function sleep(ms: number, signal?: AbortSignal | null): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
-      reject(signal.reason instanceof Error ? signal.reason : new Error("Aborted"));
-      return;
+      reject(signal.reason instanceof Error ? signal.reason : new Error("Aborted"))
+      return
     }
 
     const timeout = setTimeout(() => {
-      cleanup();
-      resolve();
-    }, ms);
+      cleanup()
+      resolve()
+    }, ms)
 
     const onAbort = () => {
-      cleanup();
-      reject(signal?.reason instanceof Error ? signal.reason : new Error("Aborted"));
-    };
+      cleanup()
+      reject(signal?.reason instanceof Error ? signal.reason : new Error("Aborted"))
+    }
 
     const cleanup = () => {
-      clearTimeout(timeout);
-      signal?.removeEventListener("abort", onAbort);
-    };
+      clearTimeout(timeout)
+      signal?.removeEventListener("abort", onAbort)
+    }
 
-    signal?.addEventListener("abort", onAbort, { once: true });
-  });
+    signal?.addEventListener("abort", onAbort, { once: true })
+  })
 }
 
 /**
@@ -924,30 +859,30 @@ export const createAntigravityPlugin = (providerId: string) => async (
   { client, directory }: PluginContext,
 ): Promise<PluginResult> => {
   // Load configuration from files and environment variables
-  const config = loadConfig(directory);
-  initRuntimeConfig(config);
+  const config = loadConfig(directory)
+  initRuntimeConfig(config)
 
   // Cached getAuth function for tool access
-  let cachedGetAuth: GetAuth | null = null;
+  let cachedGetAuth: GetAuth | null = null
   
   // Initialize debug with config
-  initializeDebug(config);
+  initializeDebug(config)
   
   // Initialize structured logger for TUI integration
-  initLogger(client);
+  initLogger(client)
   
   // Initialize toast service for user-facing notifications
-  initToastService(client, config);
+  initToastService(client, config)
   
   if (wasConfigCreated()) {
     toast.info("Created default configuration", {
       title: "Antigravity",
       message: `Config created at ${getUserConfigPath()}`,
-    });
+    })
   }
   
   // Fetch latest Antigravity version from remote API (non-blocking, falls back to hardcoded)
-  await initAntigravityVersion();
+  await initAntigravityVersion()
   
   // Initialize health tracker for hybrid strategy
   if (config.health_score) {
@@ -959,7 +894,7 @@ export const createAntigravityPlugin = (providerId: string) => async (
       recoveryRatePerHour: config.health_score.recovery_rate_per_hour,
       minUsable: config.health_score.min_usable,
       maxScore: config.health_score.max_score,
-    });
+    })
   }
 
   // Initialize token tracker for hybrid strategy
@@ -968,48 +903,48 @@ export const createAntigravityPlugin = (providerId: string) => async (
       maxTokens: config.token_bucket.max_tokens,
       regenerationRatePerMinute: config.token_bucket.regeneration_rate_per_minute,
       initialTokens: config.token_bucket.initial_tokens,
-    });
+    })
   }
   
   // Initialize disk signature cache if keep_thinking is enabled
   // This integrates with the in-memory cacheSignature/getCachedSignature functions
   if (config.keep_thinking) {
-    initDiskSignatureCache(config.signature_cache);
+    initDiskSignatureCache(config.signature_cache)
   }
   
   // Initialize session recovery hook with full context
-  const sessionRecovery = createSessionRecoveryHook({ client, directory }, config);
+  const sessionRecovery = createSessionRecoveryHook({ client, directory }, config)
   
   const updateChecker = createAutoUpdateCheckerHook(client, directory, {
     showStartupToast: true,
     autoUpdate: config.auto_update,
-  });
+  })
 
   // Event handler for session recovery and updates
   const eventHandler = async (input: { event: { type: string; properties?: unknown } }) => {
     // Forward to update checker
-    await updateChecker.event(input);
+    await updateChecker.event(input)
     
     // Track if this is a child session (subagent, background task)
     // This is used to filter toasts based on toast_scope config
     if (input.event.type === "session.created") {
-      const props = input.event.properties as { info?: { parentID?: string } } | undefined;
+      const props = input.event.properties as { info?: { parentID?: string } } | undefined
       if (props?.info?.parentID) {
-        setChildSession(true);
-        log.debug("child-session-detected", { parentID: props.info.parentID });
+        setChildSession(true)
+        log.debug("child-session-detected", { parentID: props.info.parentID })
       } else {
         // Reset for root sessions - important when plugin instance is reused
-        setChildSession(false);
-        log.debug("root-session-detected", {});
+        setChildSession(false)
+        log.debug("root-session-detected", {})
       }
     }
     
     // Handle session recovery
     if (sessionRecovery && input.event.type === "session.error") {
-      const props = input.event.properties as Record<string, unknown> | undefined;
-      const sessionID = props?.sessionID as string | undefined;
-      const messageID = props?.messageID as string | undefined;
-      const error = props?.error;
+      const props = input.event.properties as Record<string, unknown> | undefined
+      const sessionID = props?.sessionID as string | undefined
+      const messageID = props?.messageID as string | undefined
+      const error = props?.error
       
       if (sessionRecovery.isRecoverableError(error)) {
         const messageInfo = {
@@ -1017,10 +952,10 @@ export const createAntigravityPlugin = (providerId: string) => async (
           role: "assistant" as const,
           sessionID,
           error,
-        };
+        }
         
         // handleSessionRecovery now does the actual fix (injects tool_result, etc.)
-        const recovered = await sessionRecovery.handleSessionRecovery(messageInfo);
+        const recovered = await sessionRecovery.handleSessionRecovery(messageInfo)
 
         // Only send "continue" AFTER successful tool_result_missing recovery
         // (thinking recoveries already resume inside handleSessionRecovery)
@@ -1030,17 +965,17 @@ export const createAntigravityPlugin = (providerId: string) => async (
             path: { id: sessionID },
             body: { parts: [{ type: "text", text: config.resume_text }] },
             query: { directory },
-          }).catch(() => {});
+          }).catch(() => {})
           
           // Show success toast (respects toast_scope for child sessions)
-          const successToast = getRecoverySuccessToast();
+          const successToast = getRecoverySuccessToast()
           toast.success(successToast.message, {
             title: successToast.title,
-          });
+          })
         }
       }
     }
-  };
+  }
 
   // Create google_search tool with access to auth context
   const googleSearchTool = tool({
@@ -1051,31 +986,31 @@ export const createAntigravityPlugin = (providerId: string) => async (
       thinking: tool.schema.boolean().optional().default(true).describe("Enable deep thinking for more thorough analysis (default: true)"),
     },
     async execute(args, ctx) {
-      log.debug("Google Search tool called", { query: args.query, urlCount: args.urls?.length ?? 0 });
+      log.debug("Google Search tool called", { query: args.query, urlCount: args.urls?.length ?? 0 })
 
       // Get current auth context
-      const auth = cachedGetAuth ? await cachedGetAuth() : null;
+      const auth = cachedGetAuth ? await cachedGetAuth() : null
       if (!auth || !isOAuthAuth(auth)) {
-        return "Error: Not authenticated with Antigravity. Please run `opencode auth login` to authenticate.";
+        return "Error: Not authenticated with Antigravity. Please run `opencode auth login` to authenticate."
       }
 
       // Get access token and project ID
-      const parts = parseRefreshParts(auth.refresh);
-      const projectId = parts.managedProjectId || parts.projectId || "unknown";
+      const parts = parseRefreshParts(auth.refresh)
+      const projectId = parts.managedProjectId || parts.projectId || "unknown"
 
       // Ensure we have a valid access token
-      let accessToken = auth.access;
+      let accessToken = auth.access
       if (!accessToken || accessTokenExpired(auth)) {
         try {
-          const refreshed = await refreshAccessToken(auth, client, providerId);
-          accessToken = refreshed?.access;
+          const refreshed = await refreshAccessToken(auth, client, providerId)
+          accessToken = refreshed?.access
         } catch (error) {
-          return `Error: Failed to refresh access token: ${error instanceof Error ? error.message : String(error)}`;
+          return `Error: Failed to refresh access token: ${error instanceof Error ? error.message : String(error)}`
         }
       }
 
       if (!accessToken) {
-        return "Error: No valid access token available. Please run `opencode auth login` to re-authenticate.";
+        return "Error: No valid access token available. Please run `opencode auth login` to re-authenticate."
       }
 
       return executeSearch(
@@ -1087,9 +1022,9 @@ export const createAntigravityPlugin = (providerId: string) => async (
         accessToken,
         projectId,
         ctx.abort,
-      );
+      )
     },
-  });
+  })
 
   return {
     event: eventHandler,
@@ -1100,56 +1035,62 @@ export const createAntigravityPlugin = (providerId: string) => async (
     provider: providerId,
     loader: async (getAuth: GetAuth, provider: Provider): Promise<LoaderResult | Record<string, unknown>> => {
       // Cache getAuth for tool access
-      cachedGetAuth = getAuth;
+      cachedGetAuth = getAuth
 
-      const auth = await getAuth();
+      const auth = await getAuth()
       
       // If OpenCode has no valid OAuth auth, clear any stale account storage
       if (!isOAuthAuth(auth)) {
         try {
-          await clearAccounts();
+          await clearAccounts()
         } catch {
           // ignore
         }
-        return {};
+        return {}
       }
 
       // Validate that stored accounts are in sync with OpenCode's auth
       // If OpenCode's refresh token doesn't match any stored account, clear stale storage
-      const authParts = parseRefreshParts(auth.refresh);
-      const storedAccounts = await loadAccounts();
+      const authParts = parseRefreshParts(auth.refresh)
+      const storedAccounts = await loadAccounts()
       
       // Note: AccountManager now ensures the current auth is always included in accounts
 
-      const accountManager = await AccountManager.loadFromDisk(auth);
-      activeAccountManager = accountManager;
+      const accountManager = await AccountManager.loadFromDisk(auth)
+      activeAccountManager = accountManager
+
+      const quotaSync = new ProactiveQuotaSync(accountManager, client, providerId)
+      if (config.quota_refresh_interval_minutes > 0) {
+        quotaSync.startPeriodicSync(config.quota_refresh_interval_minutes * 60 * 1000)
+      }
+
       if (accountManager.getAccountCount() > 0) {
-        accountManager.requestSaveToDisk();
+        accountManager.requestSaveToDisk()
       }
 
       // Initialize proactive token refresh queue (ported from LLM-API-Key-Proxy)
-      let refreshQueue: ProactiveRefreshQueue | null = null;
+      let refreshQueue: ProactiveRefreshQueue | null = null
       if (config.proactive_token_refresh && accountManager.getAccountCount() > 0) {
         refreshQueue = createProactiveRefreshQueue(client, providerId, {
           enabled: config.proactive_token_refresh,
           bufferSeconds: config.proactive_refresh_buffer_seconds,
           checkIntervalSeconds: config.proactive_refresh_check_interval_seconds,
-        });
-        refreshQueue.setAccountManager(accountManager);
-        refreshQueue.start();
+        })
+        refreshQueue.setAccountManager(accountManager)
+        refreshQueue.start()
       }
 
       if (isDebugEnabled()) {
-        const logPath = getLogFilePath();
+        const logPath = getLogFilePath()
         if (logPath) {
-          toast.info(`Debug log: ${logPath}`, { title: "Antigravity" });
+          toast.info(`Debug log: ${logPath}`, { title: "Antigravity" })
         }
       }
 
       if (provider.models) {
         for (const model of Object.values(provider.models)) {
           if (model) {
-            model.cost = { input: 0, output: 0 };
+            model.cost = { input: 0, output: 0 }
           }
         }
       }
@@ -1158,96 +1099,105 @@ export const createAntigravityPlugin = (providerId: string) => async (
         apiKey: "",
         async fetch(input, init) {
           if (!isGenerativeLanguageRequest(input)) {
-            return fetch(input, init);
+            return fetch(input, init)
           }
 
-          const latestAuth = await getAuth();
+          const latestAuth = await getAuth()
           if (!isOAuthAuth(latestAuth)) {
-            return fetch(input, init);
+            return fetch(input, init)
           }
 
           if (accountManager.getAccountCount() === 0) {
-            throw new Error("No Antigravity accounts configured. Run `opencode auth login`.");
+            throw new Error("No Antigravity accounts configured. Run `opencode auth login`.")
           }
 
-          const urlString = toUrlString(input);
-          const family = getModelFamilyFromUrl(urlString);
-          const model = extractModelFromUrl(urlString);
-          const debugLines: string[] = [];
+          const urlString = toUrlString(input)
+          const family = getModelFamilyFromUrl(urlString)
+          const model = extractModelFromUrl(urlString)
+          const debugLines: string[] = []
           const pushDebug = (line: string) => {
-            if (!isDebugEnabled()) return;
-            debugLines.push(line);
-          };
-          pushDebug(`request=${urlString}`);
+            if (!isDebugEnabled()) return
+            debugLines.push(line)
+          }
+          pushDebug(`request=${urlString}`)
 
           type FailureContext = {
-            response: Response;
-            streaming: boolean;
-            debugContext: ReturnType<typeof startAntigravityDebugRequest>;
-            requestedModel?: string;
-            projectId?: string;
-            endpoint?: string;
-            effectiveModel?: string;
-            sessionId?: string;
-            toolDebugMissing?: number;
-            toolDebugSummary?: string;
-            toolDebugPayload?: string;
-          };
+            response: Response
+            streaming: boolean
+            debugContext: ReturnType<typeof startAntigravityDebugRequest>
+            requestedModel?: string
+            projectId?: string
+            endpoint?: string
+            effectiveModel?: string
+            sessionId?: string
+            toolDebugMissing?: number
+            toolDebugSummary?: string
+            toolDebugPayload?: string
+          }
 
-          let lastFailure: FailureContext | null = null;
-          let lastError: Error | null = null;
-          const abortSignal = init?.signal ?? undefined;
+          let lastFailure: FailureContext | null = null
+          let lastError: Error | null = null
+          const abortSignal = init?.signal ?? undefined
 
           // Helper to check if request was aborted
           const checkAborted = () => {
             if (abortSignal?.aborted) {
-              throw abortSignal.reason instanceof Error ? abortSignal.reason : new Error("Aborted");
+              throw abortSignal.reason instanceof Error ? abortSignal.reason : new Error("Aborted")
             }
-          };
+          }
 
           // Use while(true) loop to handle rate limits with backoff
           // This ensures we wait and retry when all accounts are rate-limited
-          const quietMode = config.quiet_mode;
-          const toastScope = config.toast_scope;
+          const quietMode = config.quiet_mode
+          const toastScope = config.toast_scope
 
           // Helper to show toast without blocking on abort (respects quiet_mode and toast_scope via ToastService)
-          const showToast = async (message: string, variant: "info" | "warning" | "success" | "error") => {
-            // ToastService handles quiet_mode, toast_scope, and isChildSession
-            await toast.info(message, { variant, signal: abortSignal });
-          };
+          const showToast = async (
+            message: string,
+            variant: "info" | "warning" | "success" | "error",
+            verbosity: ToastVerbosity = "normal",
+            debounceMs?: number,
+            debounceKey?: string
+          ) => {
+            // ToastService handles quiet_mode, toast_scope, isChildSession, and debouncing
+            await toast.info(message, { variant, signal: abortSignal, verbosity, debounceMs, debounceKey })
+          }
 
           const hasOtherAccountWithAntigravity = (currentAccount: any): boolean => {
-            if (family !== "gemini") return false;
+            if (family !== "gemini") return false
             // Use AccountManager method which properly checks for disabled/cooling-down accounts
-            return accountManager.hasOtherAccountWithAntigravityAvailable(currentAccount.index, family, model);
-          };
+            return accountManager.hasOtherAccountWithAntigravityAvailable(currentAccount.index, family, model)
+          }
 
-          let shouldSwitchAccount = false;
-          while (true) {
+          let shouldSwitchAccount = false
+          let retryCount = 0
+          const maxRetries = 20
+          while (retryCount < maxRetries) {
+            retryCount++
             // Check for abort at the start of each iteration
-            checkAborted();
+            checkAborted()
             
-            const accountCount = accountManager.getAccountCount();
-            const routingDecision = resolveHeaderRoutingDecision(urlString, family, config);
+            const accountCount = accountManager.getAccountCount()
+            const routingDecision = resolveHeaderRoutingDecision(urlString, family, config)
             const {
               cliFirst,
               preferredHeaderStyle,
               explicitQuota,
               allowQuotaFallback,
-            } = routingDecision;
+            } = routingDecision
             
             if (accountCount === 0) {
-              throw new Error("No Antigravity accounts available. Run `opencode auth login`.");
+              throw new Error("No Antigravity accounts available. Run `opencode auth login`.")
             }
 
             const softQuotaCacheTtlMs = computeSoftQuotaCacheTtlMs(
               config.soft_quota_cache_ttl_minutes,
               config.quota_refresh_interval_minutes,
-            );
+            )
 
             // Resolve sessionId from request context if possible (for stickiness)
-            const sessionId = preparedRequestSessionId(input);
-            const lastAccountForSession = sessionId ? getSessionAccountManager().getLastUsedAccount(sessionId) : null;
+            const sessionId = preparedRequestSessionId(input)
+            const lastAccountForSession = sessionId ? getSessionAccountManager().getLastUsedAccount(sessionId) : null
 
             let account = accountManager.getCurrentOrNextForFamily(
               family, 
@@ -1259,12 +1209,12 @@ export const createAntigravityPlugin = (providerId: string) => async (
               softQuotaCacheTtlMs,
               lastAccountForSession,
               shouldSwitchAccount,
-            );
-            shouldSwitchAccount = false; // Reset flag after use
+            )
+            shouldSwitchAccount = false// Reset flag after use
 
             if (!account && allowQuotaFallback) {
               const alternateHeaderStyle: HeaderStyle =
-                preferredHeaderStyle === "antigravity" ? "gemini-cli" : "antigravity";
+                preferredHeaderStyle === "antigravity" ? "gemini-cli" : "antigravity"
               account = accountManager.getCurrentOrNextForFamily(
                 family,
                 model,
@@ -1275,99 +1225,118 @@ export const createAntigravityPlugin = (providerId: string) => async (
                 softQuotaCacheTtlMs,
                 lastAccountForSession,
                 false, // Don't force switch again for fallback
-              );
+              )
               if (account) {
                 pushDebug(
                   `selected-by-fallback idx=${account.index} preferred=${preferredHeaderStyle} alternate=${alternateHeaderStyle}`,
-                );
+                )
               }
             }
             
             if (!account) {
               if (accountManager.areAllAccountsOverSoftQuota(family, config.soft_quota_threshold_percent, softQuotaCacheTtlMs, model)) {
-                const threshold = config.soft_quota_threshold_percent;
-                const softQuotaWaitMs = accountManager.getMinWaitTimeForSoftQuota(family, threshold, softQuotaCacheTtlMs, model);
-                const maxWaitMs = (config.max_rate_limit_wait_seconds ?? 300) * 1000;
+                const threshold = config.soft_quota_threshold_percent
+                const softQuotaInfo = accountManager.getDetailedMinWaitTimeForSoftQuota(family, threshold, softQuotaCacheTtlMs, model)
+                const softQuotaWaitMs = softQuotaInfo?.waitMs ?? null
+                const maxWaitMs = (config.max_rate_limit_wait_seconds ?? 300) * 1000
                 
                 if (softQuotaWaitMs === null || (maxWaitMs > 0 && softQuotaWaitMs > maxWaitMs)) {
-                  const waitTimeFormatted = softQuotaWaitMs ? formatWaitTime(softQuotaWaitMs) : "unknown";
+                  const waitTimeFormatted = softQuotaWaitMs ? formatWaitTime(softQuotaWaitMs) : "unknown"
                   await toast.info(
                     `All accounts over ${threshold}% quota threshold. Resets in ${waitTimeFormatted}.`,
                     { variant: "error" }
-                  );
+                  )
                   throw new Error(
                     `Quota protection: All ${accountCount} account(s) are over ${threshold}% usage for ${family}. ` +
                     `Quota resets in ${waitTimeFormatted}. ` +
                     `Add more accounts, wait for quota reset, or set soft_quota_threshold_percent: 100 to disable.`
-                  );
+                  )
                 }
                 
-                const waitSecValue = Math.max(1, Math.ceil(softQuotaWaitMs / 1000));
-                pushDebug(`all-over-soft-quota family=${family} accounts=${accountCount} waitMs=${softQuotaWaitMs}`);
-                
-                if (!softQuotaToastShown) {
-                  await showToast(`All ${accountCount} account(s) over ${threshold}% quota. Waiting ${formatWaitTime(softQuotaWaitMs)}...`, "warning");
-                  softQuotaToastShown = true;
-                }
-                
-                await sleep(softQuotaWaitMs, abortSignal);
-                continue;
+                pushDebug(`all-over-soft-quota family=${family} accounts=${accountCount} waitMs=${softQuotaWaitMs}`)
+
+                const earliestLabel = softQuotaInfo?.accountLabel ? ` (Account ${softQuotaInfo.accountLabel})` : ""
+                await showToast(
+                  `All ${accountCount} account(s) over ${threshold}% quota for ${family}. Earliest reset in ${formatWaitTime(softQuotaWaitMs)}${earliestLabel}.`,
+                  "warning",
+                  "normal",
+                  60000,
+                  `soft-quota-${family}`
+                )
+
+                await sleep(softQuotaWaitMs, abortSignal)
+                continue
               }
 
-              const strictWait = !allowQuotaFallback;
+              const strictWait = !allowQuotaFallback
               // All accounts are rate-limited - wait and retry
-              const waitMs = accountManager.getMinWaitTimeForFamily(
+              const waitInfo = accountManager.getDetailedMinWaitTimeForFamily(
                 family,
                 model,
                 preferredHeaderStyle,
                 strictWait,
-              ) || 60_000;
-              const waitSecValue = Math.max(1, Math.ceil(waitMs / 1000));
+              )
+              const waitMs = waitInfo?.waitMs ?? 60_000
+              const waitSecValue = Math.max(1, Math.ceil(waitMs / 1000))
 
-              pushDebug(`all-rate-limited family=${family} accounts=${accountCount} waitMs=${waitMs}`);
+              pushDebug(`all-rate-limited family=${family} accounts=${accountCount} waitMs=${waitMs}`)
               if (isDebugEnabled()) {
                 logAccountContext("All accounts rate-limited", {
                   index: -1,
                   family,
                   totalAccounts: accountCount,
-                });
-                logRateLimitSnapshot(family, accountManager.getAccountsSnapshot());
+                })
+                logRateLimitSnapshot(family, accountManager.getAccountsSnapshot())
               }
 
               // If wait time exceeds max threshold, return error immediately instead of hanging
               // 0 means disabled (wait indefinitely)
-              const maxWaitMs = (config.max_rate_limit_wait_seconds ?? 300) * 1000;
+              const maxWaitMs = (config.max_rate_limit_wait_seconds ?? 300) * 1000
               if (maxWaitMs > 0 && waitMs > maxWaitMs) {
-                const waitTimeFormatted = formatWaitTime(waitMs);
+                const waitTimeFormatted = formatWaitTime(waitMs)
                 await showToast(
                   `Rate limited for ${waitTimeFormatted}. Try again later or add another account.`,
                   "error"
-                );
+                )
                 
                 // Return a proper rate limit error response
                 throw new Error(
                   `All ${accountCount} account(s) rate-limited for ${family}. ` +
                   `Quota resets in ${waitTimeFormatted}. ` +
                   `Add more accounts with \`opencode auth login\` or wait and retry.`
-                );
+                )
               }
 
-              if (!rateLimitToastShown) {
-                await showToast(`All ${accountCount} account(s) rate-limited for ${family}. Waiting ${waitSecValue}s...`, "warning");
-                rateLimitToastShown = true;
-              }
+              const earliestLabel = waitInfo?.accountLabel ? ` (Account ${waitInfo.accountLabel})` : ""
+              await showToast(
+                `All ${accountCount} account(s) rate-limited for ${family}. Earliest reset in ${formatWaitTime(waitMs)}${earliestLabel}.`,
+                "warning",
+                "normal",
+                60000,
+                `rate-limit-${family}`
+              )
 
               // Wait for the rate-limit cooldown to expire, then retry
-              await sleep(waitMs, abortSignal);
-              continue;
+              await sleep(waitMs, abortSignal)
+              continue
             }
 
-            // Account is available - reset the toast flag
-            resetAllAccountsBlockedToasts();
+            // Account is available
+            if (account.verificationRequired) {
+              const reason = account.verificationRequiredReason || "Google requires account verification."
+              const urlMsg = account.verificationUrl ? ` URL: ${account.verificationUrl}` : ""
+              await showToast(
+                `⚠ Account ${account.email || account.index + 1} needs verification: ${reason}${urlMsg}. Run 'opencode auth login' and use 'Verify accounts'.`,
+                "warning",
+                "minimal",
+                60000,
+                `verify-needed-${account.index}`
+              )
+            }
 
             pushDebug(
               `selected idx=${account.index} email=${account.email ?? ""} family=${family} accounts=${accountCount} strategy=${config.account_selection_strategy}`,
-            );
+            )
             if (isDebugEnabled()) {
               logAccountContext("Selected", {
                 index: account.index,
@@ -1375,61 +1344,63 @@ export const createAntigravityPlugin = (providerId: string) => async (
                 family,
                 totalAccounts: accountCount,
                 rateLimitState: account.rateLimitResetTimes,
-              });
+              })
             }
 
             // Show toast when switching to a different account (debounced, quiet_mode handled by showToast)
-            if (accountCount > 1 && accountManager.shouldShowAccountToast(account.index)) {
-              const accountLabel = account.email || `Account ${account.index + 1}`;
+            if (accountCount > 1) {
+              const accountLabel = account.email || `Account ${account.index + 1}`
               // Calculate position among enabled accounts (not absolute index)
-              const enabledAccounts = accountManager.getEnabledAccounts();
-              const enabledPosition = enabledAccounts.findIndex(a => a.index === account.index) + 1;
+              const enabledAccounts = accountManager.getEnabledAccounts()
+              const enabledPosition = enabledAccounts.findIndex(a => a.index === account.index) + 1
               await showToast(
                 `Using ${accountLabel} (${enabledPosition}/${accountCount})`,
-                "info"
-              );
-              accountManager.markToastShown(account.index);
+                "info",
+                "normal",
+                30000,
+                `account-switch-${account.index}`
+              )
             }
 
-            accountManager.requestSaveToDisk();
+            accountManager.requestSaveToDisk()
 
-            let authRecord = accountManager.toAuthDetails(account);
+            let authRecord = accountManager.toAuthDetails(account)
 
             if (accessTokenExpired(authRecord)) {
               try {
-                const refreshed = await refreshAccessToken(authRecord, client, providerId);
+                const refreshed = await refreshAccessToken(authRecord, client, providerId)
                 if (!refreshed) {
-                  const { failures, shouldCooldown, cooldownMs } = trackAccountFailure(account.index);
-                  getHealthTracker().recordFailure(account.index);
-                  lastError = new Error("Antigravity token refresh failed");
+                  const { failures, shouldCooldown, cooldownMs } = trackAccountFailure(account.index)
+                  getHealthTracker().recordFailure(account.index)
+                  lastError = new Error("Antigravity token refresh failed")
                   if (shouldCooldown) {
-                    accountManager.markAccountCoolingDown(account, cooldownMs, "auth-failure");
-                    accountManager.markRateLimited(account, cooldownMs, family, "antigravity", model);
-                    pushDebug(`token-refresh-failed: cooldown ${cooldownMs}ms after ${failures} failures`);
+                    accountManager.markAccountCoolingDown(account, cooldownMs, "auth-failure")
+                    accountManager.markRateLimited(account, cooldownMs, family, "antigravity", model)
+                    pushDebug(`token-refresh-failed: cooldown ${cooldownMs}ms after ${failures} failures`)
                   }
-                  continue;
+                  continue
                 }
-                resetAccountFailureState(account.index);
-                accountManager.updateFromAuth(account, refreshed);
-                authRecord = refreshed;
+                resetAccountFailureState(account.index)
+                accountManager.updateFromAuth(account, refreshed)
+                authRecord = refreshed
                 try {
-                  await accountManager.saveToDisk();
+                  await accountManager.saveToDisk()
                 } catch (error) {
-                  log.error("Failed to persist refreshed auth", { error: String(error) });
+                  log.error("Failed to persist refreshed auth", { error: String(error) })
                 }
               } catch (error) {
                 if (error instanceof AntigravityTokenRefreshError && error.code === "invalid_grant") {
-                  const removed = accountManager.removeAccount(account);
+                  const removed = accountManager.removeAccount(account)
                   if (removed) {
-                    log.warn("Removed revoked account from pool - reauthenticate via `opencode auth login`");
+                    log.warn("Removed revoked account from pool - reauthenticate via `opencode auth login`")
                     toast.warn(`Session revoked for ${account.email || "account"} - please login again`, {
                       title: "Antigravity",
                       force: true,
-                    });
+                    })
                     try {
-                      await accountManager.saveToDisk();
+                      await accountManager.saveToDisk()
                     } catch (persistError) {
-                      log.error("Failed to persist revoked account removal", { error: String(persistError) });
+                      log.error("Failed to persist revoked account removal", { error: String(persistError) })
                     }
                   }
 
@@ -1438,65 +1409,65 @@ export const createAntigravityPlugin = (providerId: string) => async (
                       await client.auth.set({
                         path: { id: providerId },
                         body: { type: "oauth", refresh: "", access: "", expires: 0 },
-                      });
+                      })
                     } catch (storeError) {
-                      log.error("Failed to clear stored Antigravity OAuth credentials", { error: String(storeError) });
+                      log.error("Failed to clear stored Antigravity OAuth credentials", { error: String(storeError) })
                     }
 
                     throw new Error(
                       "All Antigravity accounts have invalid refresh tokens. Run `opencode auth login` and reauthenticate.",
-                    );
+                    )
                   }
 
-                  lastError = error;
-                  continue;
+                  lastError = error
+                  continue
                 }
 
-                const { failures, shouldCooldown, cooldownMs } = trackAccountFailure(account.index);
-                getHealthTracker().recordFailure(account.index);
-                lastError = error instanceof Error ? error : new Error(String(error));
+                const { failures, shouldCooldown, cooldownMs } = trackAccountFailure(account.index)
+                getHealthTracker().recordFailure(account.index)
+                lastError = error instanceof Error ? error : new Error(String(error))
                 if (shouldCooldown) {
-                  accountManager.markAccountCoolingDown(account, cooldownMs, "auth-failure");
-                  accountManager.markRateLimited(account, cooldownMs, family, "antigravity", model);
-                  pushDebug(`token-refresh-error: cooldown ${cooldownMs}ms after ${failures} failures`);
+                  accountManager.markAccountCoolingDown(account, cooldownMs, "auth-failure")
+                  accountManager.markRateLimited(account, cooldownMs, family, "antigravity", model)
+                  pushDebug(`token-refresh-error: cooldown ${cooldownMs}ms after ${failures} failures`)
                 }
-                continue;
+                continue
               }
             }
 
-            const accessToken = authRecord.access;
+            const accessToken = authRecord.access
             if (!accessToken) {
-              lastError = new Error("Missing access token");
+              lastError = new Error("Missing access token")
               if (accountCount <= 1) {
-                throw lastError;
+                throw lastError
               }
-              continue;
+              continue
             }
 
-            let projectContext: ProjectContextResult;
+            let projectContext: ProjectContextResult
             try {
-              projectContext = await ensureProjectContext(authRecord);
-              resetAccountFailureState(account.index);
+              projectContext = await ensureProjectContext(authRecord)
+              resetAccountFailureState(account.index)
             } catch (error) {
-              const { failures, shouldCooldown, cooldownMs } = trackAccountFailure(account.index);
-              getHealthTracker().recordFailure(account.index);
-              lastError = error instanceof Error ? error : new Error(String(error));
+              const { failures, shouldCooldown, cooldownMs } = trackAccountFailure(account.index)
+              getHealthTracker().recordFailure(account.index)
+              lastError = error instanceof Error ? error : new Error(String(error))
               if (shouldCooldown) {
-                accountManager.markAccountCoolingDown(account, cooldownMs, "project-error");
-                accountManager.markRateLimited(account, cooldownMs, family, "antigravity", model);
-                pushDebug(`project-context-error: cooldown ${cooldownMs}ms after ${failures} failures`);
+                accountManager.markAccountCoolingDown(account, cooldownMs, "project-error")
+                accountManager.markRateLimited(account, cooldownMs, family, "antigravity", model)
+                pushDebug(`project-context-error: cooldown ${cooldownMs}ms after ${failures} failures`)
               }
-              continue;
+              continue
             }
 
             if (projectContext.auth.refresh !== authRecord.refresh || 
                 projectContext.auth.access !== authRecord.access) {
-              accountManager.updateFromAuth(account, projectContext.auth);
-              authRecord = projectContext.auth;
+              accountManager.updateFromAuth(account, projectContext.auth)
+              authRecord = projectContext.auth
               try {
-                await accountManager.saveToDisk();
+                await accountManager.saveToDisk()
               } catch (error) {
-                log.error("Failed to persist project context", { error: String(error) });
+                log.error("Failed to persist project context", { error: String(error) })
               }
             }
 
@@ -1505,31 +1476,31 @@ export const createAntigravityPlugin = (providerId: string) => async (
               projectId: string,
             ): Promise<void> => {
               if (!prepared.needsSignedThinkingWarmup || !prepared.sessionId) {
-                return;
+                return
               }
 
               if (!trackWarmupAttempt(prepared.sessionId)) {
-                return;
+                return
               }
 
               const warmupBody = buildThinkingWarmupBody(
                 typeof prepared.init.body === "string" ? prepared.init.body : undefined,
                 Boolean(prepared.effectiveModel?.toLowerCase().includes("claude") && prepared.effectiveModel?.toLowerCase().includes("thinking")),
-              );
+              )
               if (!warmupBody) {
-                return;
+                return
               }
 
-              const warmupUrl = toWarmupStreamUrl(prepared.request);
-              const warmupHeaders = new Headers(prepared.init.headers ?? {});
-              warmupHeaders.set("accept", "text/event-stream");
+              const warmupUrl = toWarmupStreamUrl(prepared.request)
+              const warmupHeaders = new Headers(prepared.init.headers ?? {})
+              warmupHeaders.set("accept", "text/event-stream")
 
               const warmupInit: RequestInit = {
                 ...prepared.init,
                 method: prepared.init.method ?? "POST",
                 headers: warmupHeaders,
                 body: warmupBody,
-              };
+              }
 
               const warmupDebugContext = startAntigravityDebugRequest({
                 originalUrl: warmupUrl,
@@ -1539,17 +1510,17 @@ export const createAntigravityPlugin = (providerId: string) => async (
                 body: warmupBody,
                 streaming: true,
                 projectId,
-              });
+              })
 
               try {
-                pushDebug("thinking-warmup: start");
+                pushDebug("thinking-warmup: start")
                 // Add 30s timeout for warmup to prevent hanging the main request
-                const warmupTimeoutSignal = AbortSignal.timeout(30000);
+                const warmupTimeoutSignal = AbortSignal.timeout(30000)
                 const combinedWarmupSignal = warmupInit.signal 
                   ? AbortSignal.any([warmupInit.signal, warmupTimeoutSignal]) 
-                  : warmupTimeoutSignal;
+                  : warmupTimeoutSignal
 
-                const warmupResponse = await fetch(warmupUrl, { ...warmupInit, signal: combinedWarmupSignal });
+                const warmupResponse = await fetch(warmupUrl, { ...warmupInit, signal: combinedWarmupSignal })
                 const transformed = await transformAntigravityResponse(
                   warmupResponse,
                   true,
@@ -1559,29 +1530,29 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   warmupUrl,
                   prepared.effectiveModel,
                   prepared.sessionId,
-                );
-                await transformed.text();
-                markWarmupSuccess(prepared.sessionId);
-                pushDebug("thinking-warmup: done");
+                )
+                await transformed.text()
+                markWarmupSuccess(prepared.sessionId)
+                pushDebug("thinking-warmup: done")
               } catch (error) {
-                clearWarmupAttempt(prepared.sessionId);
+                clearWarmupAttempt(prepared.sessionId)
                 pushDebug(
                   `thinking-warmup: failed ${error instanceof Error ? error.message : String(error)}`,
-                );
+                )
               }
-            };
+            }
 
             // Try endpoint fallbacks with single header style based on model suffix
-            let currentAccountDone = false;
+            let currentAccountDone = false
             
             // Determine header style from model suffix:
             // - Models with antigravity- prefix -> use Antigravity quota
             // - Gemini models without explicit prefix -> follow cli_first
             // - Claude models -> always use Antigravity
-            let headerStyle = preferredHeaderStyle;
-            pushDebug(`headerStyle=${headerStyle} explicit=${explicitQuota}`);
+            let headerStyle = preferredHeaderStyle
+            pushDebug(`headerStyle=${headerStyle} explicit=${explicitQuota}`)
             if (account.fingerprint) {
-              pushDebug(`fingerprint: quotaUser=${account.fingerprint.quotaUser} deviceId=${account.fingerprint.deviceId.slice(0, 8)}...`);
+              pushDebug(`fingerprint: quotaUser=${account.fingerprint.quotaUser} deviceId=${account.fingerprint.deviceId.slice(0, 8)}...`)
             }
             
             // Check if this header style is rate-limited for this account
@@ -1591,83 +1562,83 @@ export const createAntigravityPlugin = (providerId: string) => async (
                 // Check if ANY other account has antigravity available
                 if (accountManager.hasOtherAccountWithAntigravityAvailable(account.index, family, model)) {
                   // Switch to another account with antigravity (preserve antigravity priority)
-                  pushDebug(`antigravity rate-limited on account ${account.index}, but available on other accounts. Switching.`);
-                  shouldSwitchAccount = true;
-                  currentAccountDone = true;
+                  pushDebug(`antigravity rate-limited on account ${account.index}, but available on other accounts. Switching.`)
+                  shouldSwitchAccount = true
+                  currentAccountDone = true
                 } else {
                   // All accounts exhausted antigravity - fall back to gemini-cli on this account
-                  const alternateStyle = accountManager.getAvailableHeaderStyle(account, family, model);
+                  const alternateStyle = accountManager.getAvailableHeaderStyle(account, family, model)
                   const fallbackStyle = resolveQuotaFallbackHeaderStyle({
                     family,
                     headerStyle,
                     alternateStyle,
-                  });
+                  })
                   if (fallbackStyle) {
                     await toast.info(
                       `Antigravity quota exhausted on all accounts. Using Gemini CLI quota.`,
-                      { variant: "warning" }
-                    );
-                    headerStyle = fallbackStyle;
-                    pushDebug(`all-accounts antigravity exhausted, quota fallback: ${headerStyle}`);
+                      { variant: "warning", verbosity: "normal" }
+                    )
+                    headerStyle = fallbackStyle
+                    pushDebug(`all-accounts antigravity exhausted, quota fallback: ${headerStyle}`)
                   } else {
-                    shouldSwitchAccount = true;
-                    currentAccountDone = true;
+                    shouldSwitchAccount = true
+                    currentAccountDone = true
                   }
                 }
               } else if (allowQuotaFallback && family === "gemini") {
                 // gemini-cli rate-limited - try alternate style (antigravity) on same account
-                const alternateStyle = accountManager.getAvailableHeaderStyle(account, family, model);
+                const alternateStyle = accountManager.getAvailableHeaderStyle(account, family, model)
                 const fallbackStyle = resolveQuotaFallbackHeaderStyle({
                   family,
                   headerStyle,
                   alternateStyle,
-                });
+                })
                 if (fallbackStyle) {
-                  const quotaName = headerStyle === "gemini-cli" ? "Gemini CLI" : "Antigravity";
-                  const altQuotaName = fallbackStyle === "gemini-cli" ? "Gemini CLI" : "Antigravity";
+                  const quotaName = headerStyle === "gemini-cli" ? "Gemini CLI" : "Antigravity"
+                  const altQuotaName = fallbackStyle === "gemini-cli" ? "Gemini CLI" : "Antigravity"
                   await toast.info(
                     `${quotaName} quota exhausted, using ${altQuotaName} quota`,
-                    { variant: "warning" }
-                  );
+                    { variant: "warning", verbosity: "normal" }
+                  )
 
-                  headerStyle = fallbackStyle;
-                  pushDebug(`quota fallback: ${headerStyle}`);
+                  headerStyle = fallbackStyle
+                  pushDebug(`quota fallback: ${headerStyle}`)
                 } else {
-                  shouldSwitchAccount = true;
-                  currentAccountDone = true;
+                  shouldSwitchAccount = true
+                  currentAccountDone = true
                 }
               } else {
-                shouldSwitchAccount = true;
-                currentAccountDone = true;
+                shouldSwitchAccount = true
+                currentAccountDone = true
               }
             }
             
             while (!currentAccountDone) {
             
             // Flag to force thinking recovery on retry after API error
-            let forceThinkingRecovery = false;
+            let forceThinkingRecovery = false
             
             // Track if token was consumed (for hybrid strategy refund on error)
-            let tokenConsumed = false;
+            let tokenConsumed = false
             
             // Track capacity retries per endpoint to prevent infinite loops
-            let capacityRetryCount = 0;
-            let lastEndpointIndex = -1;
+            let capacityRetryCount = 0
+            let lastEndpointIndex = -1
             
             for (let i = 0; i < ANTIGRAVITY_ENDPOINT_FALLBACKS.length; i++) {
               // Reset capacity retry counter when switching to a new endpoint
               if (i !== lastEndpointIndex) {
-                capacityRetryCount = 0;
-                lastEndpointIndex = i;
+                capacityRetryCount = 0
+                lastEndpointIndex = i
               }
 
-              const currentEndpoint = ANTIGRAVITY_ENDPOINT_FALLBACKS[i];
+              const currentEndpoint = ANTIGRAVITY_ENDPOINT_FALLBACKS[i]
 
               // Skip sandbox endpoints for Gemini CLI models - they only work with Antigravity quota
               // Gemini CLI models must use production endpoint (cloudcode-pa.googleapis.com)
               if (headerStyle === "gemini-cli" && currentEndpoint !== ANTIGRAVITY_ENDPOINT_PROD) {
-                pushDebug(`Skipping sandbox endpoint ${currentEndpoint} for gemini-cli headerStyle`);
-                continue;
+                pushDebug(`Skipping sandbox endpoint ${currentEndpoint} for gemini-cli headerStyle`)
+                continue
               }
 
               try {
@@ -1684,17 +1655,17 @@ export const createAntigravityPlugin = (providerId: string) => async (
                     claudePromptAutoCaching: config.claude_prompt_auto_caching,
                     fingerprint: account.fingerprint,
                   },
-                );
+                )
 
                 // Show recovery message if present (e.g. session fixation)
                 if (prepared.thinkingRecoveryMessage) {
-                  await showToast(prepared.thinkingRecoveryMessage, "info");
+                  await showToast(prepared.thinkingRecoveryMessage, "info")
                 }
 
-                const originalUrl = toUrlString(input);
-                const resolvedUrl = toUrlString(prepared.request);
-                pushDebug(`endpoint=${currentEndpoint}`);
-                pushDebug(`resolved=${resolvedUrl}`);
+                const originalUrl = toUrlString(input)
+                const resolvedUrl = toUrlString(prepared.request)
+                pushDebug(`endpoint=${currentEndpoint}`)
+                pushDebug(`resolved=${resolvedUrl}`)
                 const debugContext = startAntigravityDebugRequest({
                   originalUrl,
                   resolvedUrl,
@@ -1703,7 +1674,7 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   body: prepared.init.body,
                   streaming: prepared.streaming,
                   projectId: projectContext.effectiveProjectId,
-                });
+                })
 
                 const createFailureContext = (failureResponse: Response): FailureContext => ({
                   response: failureResponse,
@@ -1717,42 +1688,42 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   toolDebugMissing: prepared.toolDebugMissing,
                   toolDebugSummary: prepared.toolDebugSummary,
                   toolDebugPayload: prepared.toolDebugPayload,
-                });
+                })
 
-                await runThinkingWarmup(prepared, projectContext.effectiveProjectId);
+                await runThinkingWarmup(prepared, projectContext.effectiveProjectId)
 
                 if (config.request_jitter_max_ms > 0) {
-                  const jitterMs = Math.floor(Math.random() * config.request_jitter_max_ms);
+                  const jitterMs = Math.floor(Math.random() * config.request_jitter_max_ms)
                   if (jitterMs > 0) {
-                    await sleep(jitterMs, abortSignal);
+                    await sleep(jitterMs, abortSignal)
                   }
                 }
 
                 // Consume token for hybrid strategy with model-specific cost
                 // Refunded later if request fails (429 or network error)
                 if (config.account_selection_strategy === 'hybrid') {
-                  tokenConsumed = getTokenTracker().consume(account.index, family, model);
+                  tokenConsumed = getTokenTracker().consume(account.index, family, model)
                 }
 
                 // Increment active requests for concurrency tracking
-                getConcurrencyTracker().increment(account.index);
+                getConcurrencyTracker().increment(account.index)
 
                 // Calculate timeout for this request
-                const timeoutMs = (config.request_timeout_seconds ?? 120) * 1000;
-                const timeoutSignal = AbortSignal.timeout(timeoutMs);
+                const timeoutMs = (config.request_timeout_seconds ?? 120) * 1000
+                const timeoutSignal = AbortSignal.timeout(timeoutMs)
                 const combinedSignal = prepared.init.signal 
                   ? AbortSignal.any([prepared.init.signal, timeoutSignal]) 
-                  : timeoutSignal;
+                  : timeoutSignal
 
-                let response: Response;
+                let response: Response
                 try {
-                  response = await fetch(prepared.request, { ...prepared.init, signal: combinedSignal });
+                  response = await fetch(prepared.request, { ...prepared.init, signal: combinedSignal })
                 } catch (error) {
                   // Special handling for timeouts to provide better user feedback
                   if (error instanceof Error && (error.name === "TimeoutError" || (error.name === "AbortError" && timeoutSignal.aborted))) {
-                    const timeoutMsg = `Request timed out after ${config.request_timeout_seconds}s`;
-                    pushDebug(timeoutMsg);
-                    await showToast(`${timeoutMsg}. Try a different model or endpoint.`, "error");
+                    const timeoutMsg = `Request timed out after ${config.request_timeout_seconds}s`
+                    pushDebug(timeoutMsg)
+                    await showToast(`${timeoutMsg}. Try a different model or endpoint.`, "error")
                     
                     // Treat timeout as a 504 Gateway Timeout for the purpose of fallback logic
                     lastFailure = {
@@ -1771,20 +1742,20 @@ export const createAntigravityPlugin = (providerId: string) => async (
                       toolDebugMissing: prepared.toolDebugMissing,
                       toolDebugSummary: prepared.toolDebugSummary,
                       toolDebugPayload: prepared.toolDebugPayload,
-                    };
-                    continue; // Try next endpoint or account
+                    }
+                    continue// Try next endpoint or account
                   }
-                  throw error;
+                  throw error
                 } finally {
                   // Decrement active requests - MUST happen even on network errors
-                  getConcurrencyTracker().decrement(account.index);
+                  getConcurrencyTracker().decrement(account.index)
                 }
                 
-                pushDebug(`status=${response.status} ${response.statusText}`);
+                pushDebug(`status=${response.status} ${response.statusText}`)
 
                 // Record successful usage for session stickiness
                 if (response.ok && prepared.sessionId) {
-                  getSessionAccountManager().recordUse(prepared.sessionId, account.index);
+                  getSessionAccountManager().recordUse(prepared.sessionId, account.index)
                 }
 
 
@@ -1794,39 +1765,39 @@ export const createAntigravityPlugin = (providerId: string) => async (
                 if (response.status === 429 || (response.status >= 500 && response.status < 600)) {
                   // Refund token on rate limit
                   if (tokenConsumed) {
-                    getTokenTracker().refund(account.index, family, model);
-                    tokenConsumed = false;
+                    getTokenTracker().refund(account.index, family, model)
+                    tokenConsumed = false
                   }
 
-                  const defaultRetryMs = (config.default_retry_after_seconds ?? 60) * 1000;
-                  const maxBackoffMs = (config.max_backoff_seconds ?? 60) * 1000;
-                  const headerRetryMs = retryAfterMsFromResponse(response, defaultRetryMs);
-                  const bodyInfo = await extractRetryInfoFromBody(response);
-                  const serverRetryMs = bodyInfo.retryDelayMs ?? headerRetryMs;
+                  const defaultRetryMs = (config.default_retry_after_seconds ?? 60) * 1000
+                  const maxBackoffMs = (config.max_backoff_seconds ?? 60) * 1000
+                  const headerRetryMs = retryAfterMsFromResponse(response, defaultRetryMs)
+                  const bodyInfo = await extractRetryInfoFromBody(response)
+                  const serverRetryMs = bodyInfo.retryDelayMs ?? headerRetryMs
 
                   // Extract message from raw body if structured extraction failed
                   // This ensures we can still classify the error correctly
                   const messageForClassification = bodyInfo.message 
                     || extractMessageFromRawBody(bodyInfo.rawBody || "")
-                    || undefined;
+                    || undefined
 
                   // [Enhanced Parsing] Pass status to handling logic
-                  const rateLimitReason = parseRateLimitReason(bodyInfo.reason, messageForClassification, response.status);
+                  const rateLimitReason = parseRateLimitReason(bodyInfo.reason, messageForClassification, response.status)
 
                   // Calculate backoff/wait time
-                  const quotaKey = headerStyleToQuotaKey(headerStyle, family);
-                  const { attempt, delayMs } = getRateLimitBackoff(account.index, quotaKey, serverRetryMs);
-                  const smartBackoffMs = calculateBackoffMs(rateLimitReason, account.consecutiveFailures ?? 0, serverRetryMs);
-                  const effectiveDelayMs = Math.max(delayMs, smartBackoffMs);
+                  const quotaKey = headerStyleToQuotaKey(headerStyle, family)
+                  const { attempt, delayMs } = getRateLimitBackoff(account.index, quotaKey, serverRetryMs)
+                  const smartBackoffMs = calculateBackoffMs(rateLimitReason, account.consecutiveFailures ?? 0, serverRetryMs)
+                  const effectiveDelayMs = Math.max(delayMs, smartBackoffMs)
 
-                  const accountLabel = account.email || `Account ${account.index + 1}`;
+                  const accountLabel = account.email || `Account ${account.index + 1}`
 
                   pushDebug(
                     `RateLimit/ServerError idx=${account.index} status=${response.status} family=${family} delayMs=${effectiveDelayMs} attempt=${attempt} reason=${rateLimitReason}`,
-                  );
-                  if (bodyInfo.message) pushDebug(`429/5xx message=${bodyInfo.message}`);
-                  if (bodyInfo.reason) pushDebug(`429/5xx reason=${bodyInfo.reason}`);
-                  if (!bodyInfo.message && bodyInfo.rawBody) pushDebug(`429/5xx NO MESSAGE - rawBody preview: ${bodyInfo.rawBody.slice(0, 200)}`);
+                  )
+                  if (bodyInfo.message) pushDebug(`429/5xx message=${bodyInfo.message}`)
+                  if (bodyInfo.reason) pushDebug(`429/5xx reason=${bodyInfo.reason}`)
+                  if (!bodyInfo.message && bodyInfo.rawBody) pushDebug(`429/5xx NO MESSAGE - rawBody preview: ${bodyInfo.rawBody.slice(0, 200)}`)
 
                    logRateLimitEvent(
                     account.index,
@@ -1835,117 +1806,121 @@ export const createAntigravityPlugin = (providerId: string) => async (
                     response.status,
                     effectiveDelayMs,
                     bodyInfo,
-                  );
+                  )
 
-                  await logResponseBody(debugContext, response, response.status);
+                  await logResponseBody(debugContext, response, response.status)
 
-                  getHealthTracker().recordRateLimit(account.index);
+                  const penalty = getPenaltyForReason(rateLimitReason)
+                  getHealthTracker().recordRateLimit(account.index, penalty)
 
                   // Define display reason for user feedback
                   // Never show "UNKNOWN" - show the actual server message or "NO_BODY" instead
-                  let displayReason: string;
+                  let displayReason: string
                   if (bodyInfo.message && bodyInfo.message.trim()) {
-                    displayReason = bodyInfo.message;
+                    displayReason = bodyInfo.message
                   } else {
                     // Try to extract a message from raw body as a last resort
-                    const extractedMessage = extractMessageFromRawBody(bodyInfo.rawBody || "");
+                    const extractedMessage = extractMessageFromRawBody(bodyInfo.rawBody || "")
                     if (extractedMessage && extractedMessage.trim()) {
-                      displayReason = extractedMessage;
+                      displayReason = extractedMessage
                     } else if (bodyInfo.rawBody && bodyInfo.rawBody.trim()) {
-                      displayReason = bodyInfo.rawBody;
+                      displayReason = bodyInfo.rawBody
                     } else {
-                      displayReason = "NO_BODY";
+                      displayReason = "NO_BODY"
                     }
                   }
 
                   // ENHANCED RATE LIMIT HANDLING:
                   // Actually wait for the ratelimited amount of time (plus 1-3s random jitter)
                   // unless the ratelimit is over 60s.
-                  const waitThresholdMs = 60_000;
+                  const waitThresholdMs = 60_000
                   
                   if (effectiveDelayMs <= waitThresholdMs && rateLimitReason !== "QUOTA_EXHAUSTED") {
-                    const extraWaitMs = Math.floor(Math.random() * 2000) + 1000; // 1-3s random
-                    const totalWaitMs = effectiveDelayMs + extraWaitMs;
-                    const waitSec = Math.ceil(totalWaitMs / 1000);
+                    const extraWaitMs = Math.floor(Math.random() * 2000) + 1000// 1-3s random
+                    const totalWaitMs = effectiveDelayMs + extraWaitMs
+                    const waitSec = Math.ceil(totalWaitMs / 1000)
 
-                    pushDebug(`Rate limited (${rateLimitReason}), waiting ${totalWaitMs}ms (${effectiveDelayMs} + ${extraWaitMs} jitter)`);
+                    pushDebug(`Rate limited (${rateLimitReason}), waiting ${totalWaitMs}ms (${effectiveDelayMs} + ${extraWaitMs} jitter)`)
 
                     await showToast(
                       `⏳ Rate limited (${displayReason}). Waiting ${waitSec}s to retry same account...`,
                       "warning",
-                    );
+                      "verbose",
+                      30000,
+                      `retry-same-account-${account.index}`
+                    )
 
                     // If this is a repeated hit, try regenerating fingerprint as a mitigation
                     if (attempt > 1) {
-                      pushDebug(`Regenerating fingerprint for account ${account.index} after ${attempt} consecutive hits`);
-                      accountManager.regenerateAccountFingerprint(account.index);
+                      pushDebug(`Regenerating fingerprint for account ${account.index} after ${attempt} consecutive hits`)
+                      accountManager.regenerateAccountFingerprint(account.index)
                     }
 
-                    await sleep(totalWaitMs, abortSignal);
+                    await sleep(totalWaitMs, abortSignal)
                     
                     // After waiting, we retry the same account/endpoint
-                    i -= 1;
-                    continue;
+                    i -= 1
+                    continue
                   }
 
                   // If > 60s or QUOTA_EXHAUSTED, assume quota reached
-                  accountManager.markRateLimitedWithReason(account, family, headerStyle, model, rateLimitReason, serverRetryMs, config.failure_ttl_seconds * 1000);
-                  accountManager.requestSaveToDisk();
+                  accountManager.markRateLimitedWithReason(account, family, headerStyle, model, rateLimitReason, serverRetryMs, config.failure_ttl_seconds * 1000)
+                  accountManager.requestSaveToDisk()
 
-                  pushDebug(`Quota reached or long wait (${effectiveDelayMs}ms) for ${accountLabel}. Switching or falling back.`);
+                  pushDebug(`Quota reached or long wait (${effectiveDelayMs}ms) for ${accountLabel}. Switching or falling back.`)
 
                   // For Gemini, preserve preferred quota across accounts before fallback
                   if (family === "gemini") {
                     if (headerStyle === "antigravity") {
                       // Check if any other account has Antigravity quota for this model
                       if (hasOtherAccountWithAntigravity(account)) {
-                        pushDebug(`antigravity exhausted on account ${account.index}, but available on others. Switching account.`);
-                        await showToast(`Quota exhausted. Switching account in 5s...`, "warning");
-                        await sleep(SWITCH_ACCOUNT_DELAY_MS, abortSignal);
-                        shouldSwitchAccount = true;
-                        currentAccountDone = true;
-                        lastFailure = createFailureContext(response);
-                        break;
+                        pushDebug(`antigravity exhausted on account ${account.index}, but available on others. Switching account.`)
+                        await showToast(`Quota exhausted. Switching account in 5s...`, "warning", "normal", 30000, "quota-exhausted-switch")
+                        await sleep(SWITCH_ACCOUNT_DELAY_MS, abortSignal)
+                        shouldSwitchAccount = true
+                        currentAccountDone = true
+                        lastFailure = createFailureContext(response)
+                        break
                       }
 
                       // All accounts exhausted for Antigravity on THIS model.
                       // Before falling back to gemini-cli, check if it's the last option (automatic fallback)
                       if (allowQuotaFallback) {
-                        const alternateStyle = accountManager.getAvailableHeaderStyle(account, family, model);
+                        const alternateStyle = accountManager.getAvailableHeaderStyle(account, family, model)
                         const fallbackStyle = resolveQuotaFallbackHeaderStyle({
                           family,
                           headerStyle,
                           alternateStyle,
-                        });
+                        })
                         if (fallbackStyle) {
-                          const safeModelName = model || "this model";
+                          const safeModelName = model || "this model"
                           await toast.info(
                             `Antigravity quota exhausted for ${safeModelName}. Switching to Gemini CLI quota...`,
-                            { variant: "warning" }
-                          );
-                          headerStyle = fallbackStyle;
-                          pushDebug(`quota fallback: ${headerStyle}`);
-                          continue;
+                            { variant: "warning", verbosity: "normal", debounceMs: 30000, debounceKey: "quota-fallback" }
+                          )
+                          headerStyle = fallbackStyle
+                          pushDebug(`quota fallback: ${headerStyle}`)
+                          continue
                         }
                       }
                     } else if (headerStyle === "gemini-cli") {
                       if (allowQuotaFallback) {
-                        const alternateStyle = accountManager.getAvailableHeaderStyle(account, family, model);
+                        const alternateStyle = accountManager.getAvailableHeaderStyle(account, family, model)
                         const fallbackStyle = resolveQuotaFallbackHeaderStyle({
                           family,
                           headerStyle,
                           alternateStyle,
-                        });
+                        })
                         if (fallbackStyle) {
-                          const safeModelName = model || "this model";
+                          const safeModelName = model || "this model"
                           await toast.info(
                             `Gemini CLI quota exhausted for ${safeModelName}. Switching to Antigravity quota...`,
-                            { variant: "warning" }
-                          );
+                            { variant: "warning", verbosity: "normal", debounceMs: 30000, debounceKey: "quota-fallback" }
+                          )
 
-                          headerStyle = fallbackStyle;
-                          pushDebug(`quota fallback: ${headerStyle}`);
-                          continue;
+                          headerStyle = fallbackStyle
+                          pushDebug(`quota fallback: ${headerStyle}`)
+                          continue
                         }
                       }
                     }
@@ -1954,72 +1929,69 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   if (accountCount > 1) {
                     const quotaMsg = bodyInfo.quotaResetTime
                       ? ` (quota resets ${bodyInfo.quotaResetTime})`
-                      : ``;
+                      : ``
                     // For quota exhausted, show a shorter, clearer message
                     const toastMsg = rateLimitReason === "QUOTA_EXHAUSTED"
                       ? `Quota exhausted${quotaMsg}. Switching account in 5s...`
-                      : `Quota reached (${displayReason}) for ${accountLabel}. Switching account in 5s...${quotaMsg}`;
-                    await showToast(toastMsg, "error");
-                    await sleep(SWITCH_ACCOUNT_DELAY_MS, abortSignal);
+                      : `Quota reached (${displayReason}) for ${accountLabel}. Switching account in 5s...${quotaMsg}`
+                    await showToast(toastMsg, "error", "normal", 30000, "quota-reached-switch")
+                    await sleep(SWITCH_ACCOUNT_DELAY_MS, abortSignal)
                   } else {
                     // Single account handling
                     if (rateLimitReason === "QUOTA_EXHAUSTED") {
                       // Quota exhausted - retrying won't help, tell user to wait or add another account
                       const quotaMsg = bodyInfo.quotaResetTime
                         ? ` (quota resets ${bodyInfo.quotaResetTime})`
-                        : ``;
-                      await showToast(`Quota exhausted${quotaMsg}. Add another account or wait until quota resets.`, "error");
+                        : ``
+                      await showToast(`Quota exhausted${quotaMsg}. Add another account or wait until quota resets.`, "error", "minimal")
                       // Don't retry - just fail and let the user handle it
-                      lastFailure = createFailureContext(response);
-                      break;
+                      lastFailure = createFailureContext(response)
+                      break
                     } else {
                       // Other errors - use exponential backoff (1s, 2s, 4s, 8s... max 60s)
-                      const expBackoffMs = Math.min(FIRST_RETRY_DELAY_MS * Math.pow(2, attempt - 1), 60000);
-                      const expBackoffFormatted = expBackoffMs >= 1000 ? `${Math.round(expBackoffMs / 1000)}s` : `${expBackoffMs}ms`;
-                      await showToast(`Quota reached (${displayReason}). Retrying in ${expBackoffFormatted} (attempt ${attempt})...`, "error");
-                      await sleep(expBackoffMs, abortSignal);
+                      const expBackoffMs = Math.min(FIRST_RETRY_DELAY_MS * Math.pow(2, attempt - 1), 60000)
+                      const expBackoffFormatted = expBackoffMs >= 1000 ? `${Math.round(expBackoffMs / 1000)}s` : `${expBackoffMs}ms`
+                      await showToast(`Quota reached (${displayReason}). Retrying in ${expBackoffFormatted} (attempt ${attempt})...`, "error", "verbose")
+                      await sleep(expBackoffMs, abortSignal)
                     }
                   }
 
-                  lastFailure = createFailureContext(response);
-                  shouldSwitchAccount = true;
-                  currentAccountDone = true;
-                  break;
+                  lastFailure = createFailureContext(response)
+                  shouldSwitchAccount = true
+                  currentAccountDone = true
+                  break
                 }
 
                 // Success - reset rate limit backoff state for this quota
-                const quotaKey = headerStyleToQuotaKey(headerStyle, family);
-                resetRateLimitState(account.index, quotaKey);
-                resetAccountFailureState(account.index);
+                const quotaKey = headerStyleToQuotaKey(headerStyle, family)
+                resetRateLimitState(account.index, quotaKey)
+                resetAccountFailureState(account.index)
 
                 if (response.status === 403) {
-                  const errorBodyText = await response.clone().text().catch(() => "");
-                  const extracted = extractVerificationErrorDetails(errorBodyText);
+                  const errorBodyText = await response.clone().text().catch(() => "")
+                  const extracted = extractVerificationErrorDetails(errorBodyText)
 
                   if (extracted.validationRequired) {
-                    const verificationReason = extracted.message ?? "Google requires account verification.";
-                    const cooldownMs = 10 * 60 * 1000;
+                    const verificationReason = extracted.message || "Google requires account verification."
+                    const cooldownMs = 10 * 60 * 1000
 
-                    accountManager.markAccountVerificationRequired(account.index, verificationReason, extracted.verifyUrl);
-                    accountManager.markAccountCoolingDown(account, cooldownMs, "validation-required");
-                    accountManager.markRateLimited(account, cooldownMs, family, headerStyle, model);
+                    accountManager.markAccountVerificationRequired(account.index, verificationReason, extracted.verifyUrl)
+                    accountManager.markAccountCoolingDown(account, cooldownMs, "validation-required")
+                    accountManager.markRateLimited(account, cooldownMs, family, headerStyle, model)
 
-                    const label = account.email || `Account ${account.index + 1}`;
-                    if (accountManager.shouldShowAccountToast(account.index, 60000)) {
-                      await toast.info(
-                        `⚠ ${label} needs verification. Run 'opencode auth login' and use Verify accounts.`,
-                        { variant: "warning" }
-                      );
-                      accountManager.markToastShown(account.index);
-                    }
+                    const label = account.email || `Account ${account.index + 1}`
+                    await toast.info(
+                      `🚨 Verification Required for ${label}: ${verificationReason}. Please run 'opencode auth login' and follow the 'Verify accounts' flow to restore access.`,
+                      { variant: "error", force: true, verbosity: "minimal" }
+                    )
 
-                    pushDebug(`verification-required: disabled account ${account.index}`);
-                    getHealthTracker().recordFailure(account.index);
+                    pushDebug(`verification-required: disabled account ${account.index}`)
+                    getHealthTracker().recordFailure(account.index, getPenaltyForReason("VERIFICATION_REQUIRED"))
 
-                    lastFailure = createFailureContext(response);
-                    shouldSwitchAccount = true;
-                    currentAccountDone = true;
-                    break;
+                    lastFailure = createFailureContext(response)
+                    shouldSwitchAccount = true
+                    currentAccountDone = true
+                    break
                   }
                 }
 
@@ -2027,48 +1999,42 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   response.status === 403 ||
                   response.status === 404 ||
                   response.status >= 500
-                );
+                )
 
                 if (shouldRetryEndpoint && i < ANTIGRAVITY_ENDPOINT_FALLBACKS.length - 1) {
-                  await logResponseBody(debugContext, response, response.status);
-                  lastFailure = createFailureContext(response);
-                  continue;
+                  await logResponseBody(debugContext, response, response.status)
+                  lastFailure = createFailureContext(response)
+                  continue
                 }
 
                 // Success or non-retryable error - return the response
                 if (response.ok) {
-                  account.consecutiveFailures = 0;
-                  getHealthTracker().recordSuccess(account.index);
-                  accountManager.markAccountUsed(account.index);
+                  account.consecutiveFailures = 0
+                  getHealthTracker().recordSuccess(account.index)
+                  accountManager.markAccountUsed(account.index)
                   
-                  void triggerAsyncQuotaRefreshForAccount(
-                    accountManager,
-                    account.index,
-                    client,
-                    providerId,
-                    config.quota_refresh_interval_minutes,
-                  );
+                  quotaSync.enqueue(account.index)
                 }
                 logAntigravityDebugResponse(debugContext, response, {
                   note: response.ok ? "Success" : `Error ${response.status}`,
-                });
+                })
                 if (response.ok && !prepared.streaming) {
-                  await logResponseBody(debugContext, response, response.status);
+                  await logResponseBody(debugContext, response, response.status)
                 }
                 if (!response.ok) {
-                  await logResponseBody(debugContext, response, response.status);
+                  await logResponseBody(debugContext, response, response.status)
                   
                   // Handle 400 "Prompt too long" with synthetic response to avoid session lock
                   if (response.status === 400) {
-                    const cloned = response.clone();
-                    const bodyText = await cloned.text();
+                    const cloned = response.clone()
+                    const bodyText = await cloned.text()
                     if (bodyText.includes("Prompt is too long") || bodyText.includes("prompt_too_long")) {
                       await toast.info(
                         "Context too long - use /compact to reduce size",
-                        { variant: "warning" }
-                      );
-                      const errorMessage = `[Antigravity Error] Context is too long for this model.\n\nPlease use /compact to reduce context size, then retry your request.\n\nAlternatively, you can:\n- Use /clear to start fresh\n- Use /undo to remove recent messages\n- Switch to a model with larger context window`;
-                      return createSyntheticErrorResponse(errorMessage, prepared.requestedModel);
+                        { variant: "warning", debounceMs: 10000, debounceKey: "context-too-long" }
+                      )
+                      const errorMessage = `[Antigravity Error] Context is too long for this model.\n\nPlease use /compact to reduce context size, then retry your request.\n\nAlternatively, you can:\n- Use /clear to start fresh\n- Use /undo to remove recent messages\n- Switch to a model with larger context window`
+                      return createSyntheticErrorResponse(errorMessage, prepared.requestedModel)
                     }
                   }
                 }
@@ -2077,42 +2043,42 @@ export const createAntigravityPlugin = (providerId: string) => async (
                 // For non-streaming responses, check if the response body is empty
                 // and retry if so (up to config.empty_response_max_attempts times)
                 if (response.ok && !prepared.streaming) {
-                  const maxAttempts = config.empty_response_max_attempts ?? 4;
-                  const retryDelayMs = config.empty_response_retry_delay_ms ?? 2000;
+                  const maxAttempts = config.empty_response_max_attempts ?? 4
+                  const retryDelayMs = config.empty_response_retry_delay_ms ?? 2000
                   
                   // Clone to check body without consuming original
-                  const clonedForCheck = response.clone();
-                  const bodyText = await clonedForCheck.text();
+                  const clonedForCheck = response.clone()
+                  const bodyText = await clonedForCheck.text()
                   
                   if (isEmptyResponseBody(bodyText)) {
                     // Track empty response attempts per request
-                    const emptyAttemptKey = `${prepared.sessionId ?? "none"}:${prepared.effectiveModel ?? "unknown"}`;
-                    const currentAttempts = (emptyResponseAttempts.get(emptyAttemptKey) ?? 0) + 1;
-                    emptyResponseAttempts.set(emptyAttemptKey, currentAttempts);
+                    const emptyAttemptKey = `${prepared.sessionId ?? "none"}:${prepared.effectiveModel ?? "unknown"}`
+                    const currentAttempts = (emptyResponseAttempts.get(emptyAttemptKey) ?? 0) + 1
+                    emptyResponseAttempts.set(emptyAttemptKey, currentAttempts)
                     
-                    pushDebug(`empty-response: attempt ${currentAttempts}/${maxAttempts}`);
+                    pushDebug(`empty-response: attempt ${currentAttempts}/${maxAttempts}`)
                     
                     if (currentAttempts < maxAttempts) {
                       await toast.info(
                         `Empty response received. Retrying (${currentAttempts}/${maxAttempts})...`,
-                        { variant: "warning" }
-                      );
-                      await sleep(retryDelayMs, abortSignal);
-                      continue; // Retry the endpoint loop
+                        { variant: "warning", verbosity: "verbose" }
+                      )
+                      await sleep(retryDelayMs, abortSignal)
+                      continue// Retry the endpoint loop
                     }
                     
                     // Clean up and throw after max attempts
-                    emptyResponseAttempts.delete(emptyAttemptKey);
+                    emptyResponseAttempts.delete(emptyAttemptKey)
                     throw new EmptyResponseError(
                       "antigravity",
                       prepared.effectiveModel ?? "unknown",
                       currentAttempts,
-                    );
+                    )
                   }
                   
                   // Clean up successful attempt tracking
-                  const emptyAttemptKeyClean = `${prepared.sessionId ?? "none"}:${prepared.effectiveModel ?? "unknown"}`;
-                  emptyResponseAttempts.delete(emptyAttemptKeyClean);
+                  const emptyAttemptKeyClean = `${prepared.sessionId ?? "none"}:${prepared.effectiveModel ?? "unknown"}`
+                  emptyResponseAttempts.delete(emptyAttemptKeyClean)
                 }
                 
                 const transformedResponse = await transformAntigravityResponse(
@@ -2128,47 +2094,47 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   prepared.toolDebugSummary,
                   prepared.toolDebugPayload,
                   debugLines,
-                );
+                )
 
                 // Check for context errors and show appropriate toast
-                const contextError = transformedResponse.headers.get("x-antigravity-context-error");
+                const contextError = transformedResponse.headers.get("x-antigravity-context-error")
                 if (contextError) {
                   if (contextError === "prompt_too_long") {
                     await toast.info(
                       "Context too long - use /compact to reduce size, or trim your request",
-                      { variant: "warning" }
-                    );
+                      { variant: "warning", debounceMs: 10000, debounceKey: "context-too-long" }
+                    )
                   } else if (contextError === "tool_pairing") {
                     await toast.info(
                       "Tool call/result mismatch - use /compact to fix, or /undo last message",
-                      { variant: "warning" }
-                    );
+                      { variant: "warning", debounceMs: 10000, debounceKey: "tool-pairing-error" }
+                    )
                   }
                 }
 
-                return transformedResponse;
+                return transformedResponse
               } catch (error) {
                 // Refund token on network/API error (only if consumed)
                 if (tokenConsumed) {
-                  getTokenTracker().refund(account.index);
-                  tokenConsumed = false;
+                  getTokenTracker().refund(account.index)
+                  tokenConsumed = false
                 }
 
                 // Handle recoverable thinking errors - retry with forced recovery
                 if (error instanceof Error && error.message === "THINKING_RECOVERY_NEEDED") {
                   // Only retry once with forced recovery to avoid infinite loops
                   if (!forceThinkingRecovery) {
-                    pushDebug("thinking-recovery: API error detected, retrying with forced recovery");
-                    forceThinkingRecovery = true;
-                    i = -1; // Will become 0 after loop increment, restart endpoint loop
-                    continue;
+                    pushDebug("thinking-recovery: API error detected, retrying with forced recovery")
+                    forceThinkingRecovery = true
+                    i = -1// Will become 0 after loop increment, restart endpoint loop
+                    continue
                   }
                   
                   // Already tried with forced recovery, give up and return error
-                  const recoveryError = error as any;
-                  const originalError = recoveryError.originalError || { error: { message: "Thinking recovery triggered" } };
+                  const recoveryError = error as any
+                  const originalError = recoveryError.originalError || { error: { message: "Thinking recovery triggered" } }
                   
-                  const recoveryMessage = `${originalError.error?.message || "Session recovery failed"}\n\n[RECOVERY] Thinking block corruption could not be resolved. Try starting a new session.`;
+                  const recoveryMessage = `${originalError.error?.message || "Session recovery failed"}\n\n[RECOVERY] Thinking block corruption could not be resolved. Try starting a new session.`
                   
                   return new Response(JSON.stringify({
                     type: "error",
@@ -2179,46 +2145,46 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   }), {
                     status: 400,
                     headers: { "Content-Type": "application/json" }
-                  });
+                  })
                 }
 
                 if (i < ANTIGRAVITY_ENDPOINT_FALLBACKS.length - 1) {
-                  lastError = error instanceof Error ? error : new Error(String(error));
-                  continue;
+                  lastError = error instanceof Error ? error : new Error(String(error))
+                  continue
                 }
 
                 // All endpoints failed for this account - track failure and try next account
-                const { failures, shouldCooldown, cooldownMs } = trackAccountFailure(account.index);
-                lastError = error instanceof Error ? error : new Error(String(error));
+                const { failures, shouldCooldown, cooldownMs } = trackAccountFailure(account.index)
+                lastError = error instanceof Error ? error : new Error(String(error))
                 
-                const errorMsg = error instanceof Error ? error.message : String(error);
-                const accountLabel = account.email || `Account ${account.index + 1}`;
+                const errorMsg = error instanceof Error ? error.message : String(error)
+                const accountLabel = account.email || `Account ${account.index + 1}`
                 
                 if (shouldCooldown) {
-                  accountManager.markAccountCoolingDown(account, cooldownMs, "network-error");
-                  accountManager.markRateLimited(account, cooldownMs, family, headerStyle, model);
-                  pushDebug(`endpoint-error: cooldown ${cooldownMs}ms after ${failures} failures`);
+                  accountManager.markAccountCoolingDown(account, cooldownMs, "network-error")
+                  accountManager.markRateLimited(account, cooldownMs, family, headerStyle, model)
+                  pushDebug(`endpoint-error: cooldown ${cooldownMs}ms after ${failures} failures`)
                 }
 
                 if (accountCount > 1) {
-                  await showToast(`Request failed for ${accountLabel} (${errorMsg}). Switching account in 5s...`, "error");
-                  await sleep(SWITCH_ACCOUNT_DELAY_MS, abortSignal);
+                  await showToast(`Request failed for ${accountLabel} (${errorMsg}). Switching account in 5s...`, "error", "normal")
+                  await sleep(SWITCH_ACCOUNT_DELAY_MS, abortSignal)
                 } else {
-                  await showToast(`Request failed: ${errorMsg}. Retrying in 5s...`, "error");
-                  await sleep(SWITCH_ACCOUNT_DELAY_MS, abortSignal);
+                  await showToast(`Request failed: ${errorMsg}. Retrying in 5s...`, "error", "verbose")
+                  await sleep(SWITCH_ACCOUNT_DELAY_MS, abortSignal)
                 }
 
-                shouldSwitchAccount = true;
-                currentAccountDone = true;
-                break;
+                shouldSwitchAccount = true
+                currentAccountDone = true
+                break
               }
             }
 
             // Safety break: if the endpoints loop finished without setting currentAccountDone=true
             // (meaning no endpoints were tried or all were skipped), we must switch account to avoid infinite loop.
             if (!currentAccountDone) {
-              shouldSwitchAccount = true;
-              currentAccountDone = true;
+              shouldSwitchAccount = true
+              currentAccountDone = true
             }
           } // end while(!currentAccountDone)
             
@@ -2239,13 +2205,13 @@ export const createAntigravityPlugin = (providerId: string) => async (
                     lastFailure.toolDebugSummary,
                     lastFailure.toolDebugPayload,
                     debugLines,
-                  );
+                  )
                 }
 
-                throw lastError || new Error("All Antigravity endpoints failed");
+                throw lastError || new Error("All Antigravity endpoints failed")
               }
 
-              continue;
+              continue
             }
 
             // If we get here without returning, something went wrong
@@ -2263,13 +2229,13 @@ export const createAntigravityPlugin = (providerId: string) => async (
                 lastFailure.toolDebugSummary,
                 lastFailure.toolDebugPayload,
                 debugLines,
-              );
+              )
             }
 
-            throw lastError || new Error("All Antigravity accounts failed");
+            throw lastError || new Error("All Antigravity accounts failed")
           }
         },
-      };
+      }
     },
     methods: [
       {
@@ -2281,51 +2247,51 @@ export const createAntigravityPlugin = (providerId: string) => async (
             process.env.SSH_CLIENT ||
             process.env.SSH_TTY ||
             process.env.OPENCODE_HEADLESS
-          );
+          )
 
           // Environment variable takes highest precedence (matching Gemini CLI)
-          const envProjectId = process.env.GOOGLE_CLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT_ID;
+          const envProjectId = process.env.GOOGLE_CLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT_ID
 
           // CLI flow (`opencode auth login`) passes an inputs object.
           if (inputs) {
-            const accounts: Array<Extract<AntigravityTokenExchangeResult, { type: "success" }>> = [];
-            const noBrowser = inputs.noBrowser === "true" || inputs["no-browser"] === "true";
-            const useManualMode = noBrowser || shouldSkipLocalServer();
+            const accounts: Array<Extract<AntigravityTokenExchangeResult, { type: "success" }>> = []
+            const noBrowser = inputs.noBrowser === "true" || inputs["no-browser"] === "true"
+            const useManualMode = noBrowser || shouldSkipLocalServer()
 
             if (envProjectId) {
-              console.log(`\nUsing project ID from environment: ${envProjectId}\n`);
+              console.log(`\nUsing project ID from environment: ${envProjectId}\n`)
             }
 
             // Check for existing accounts and prompt user for login mode
-            let startFresh = true;
-            let refreshAccountIndex: number | undefined;
-            const existingStorage = await loadAccounts();
+            let startFresh = true
+            let refreshAccountIndex: number | undefined
+            const existingStorage = await loadAccounts()
             if (existingStorage && existingStorage.accounts.length > 0) {
-              let menuResult;
+              let menuResult
               while (true) {
-                const now = Date.now();
+                const now = Date.now()
                 const existingAccounts = existingStorage.accounts.map((acc, idx) => {
-                  let status: 'active' | 'rate-limited' | 'expired' | 'verification-required' | 'unknown' = 'unknown';
+                  let status: 'active' | 'rate-limited' | 'expired' | 'verification-required' | 'unknown' = 'unknown'
 
                   if (acc.verificationRequired) {
-                    status = 'verification-required';
+                    status = 'verification-required'
                   } else {
-                    const rateLimits = acc.rateLimitResetTimes;
+                    const rateLimits = acc.rateLimitResetTimes
                     if (rateLimits) {
                       const isRateLimited = Object.values(rateLimits).some(
                         (resetTime) => typeof resetTime === 'number' && resetTime > now
-                      );
+                      )
                       if (isRateLimited) {
-                        status = 'rate-limited';
+                        status = 'rate-limited'
                       } else {
-                        status = 'active';
+                        status = 'active'
                       }
                     } else {
-                      status = 'active';
+                      status = 'active'
                     }
 
                     if (acc.coolingDownUntil && acc.coolingDownUntil > now) {
-                      status = 'rate-limited';
+                      status = 'rate-limited'
                     }
                   }
 
@@ -2337,26 +2303,26 @@ export const createAntigravityPlugin = (providerId: string) => async (
                     status,
                     isCurrentAccount: idx === (existingStorage.activeIndex ?? 0),
                     enabled: acc.enabled !== false,
-                  };
-                });
+                  }
+                })
                 
-                menuResult = await promptLoginMode(existingAccounts);
+                menuResult = await promptLoginMode(existingAccounts)
 
                 if (menuResult.mode === "check") {
-                  console.log("\n📊 Checking quotas for all accounts...\n");
-                  const results = await checkAccountsQuota(existingStorage.accounts, client, providerId);
-                  let storageUpdated = false;
+                  console.log("\n📊 Checking quotas for all accounts...\n")
+                  const results = await checkAccountsQuota(existingStorage.accounts, client, providerId)
+                  let storageUpdated = false
                   
                   for (const res of results) {
-                    const label = res.email || `Account ${res.index + 1}`;
-                    const disabledStr = res.disabled ? " (disabled)" : "";
-                    console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-                    console.log(`  ${label}${disabledStr}`);
-                    console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+                    const label = res.email || `Account ${res.index + 1}`
+                    const disabledStr = res.disabled ? " (disabled)" : ""
+                    console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)
+                    console.log(`  ${label}${disabledStr}`)
+                    console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`)
                     
                     if (res.status === "error") {
-                      console.log(`  ❌ Error: ${res.error}\n`);
-                      continue;
+                      console.log(`  ❌ Error: ${res.error}\n`)
+                      continue
                     }
 
                     // ANSI color codes
@@ -2365,96 +2331,96 @@ export const createAntigravityPlugin = (providerId: string) => async (
                       orange: '\x1b[33m',  // Yellow/orange
                       green: '\x1b[32m',
                       reset: '\x1b[0m',
-                    };
+                    }
 
                     // Get color based on remaining percentage
                     const getColor = (remaining?: number): string => {
-                      if (typeof remaining !== 'number') return colors.reset;
-                      if (remaining < 0.2) return colors.red;
-                      if (remaining < 0.6) return colors.orange;
-                      return colors.green;
-                    };
+                      if (typeof remaining !== 'number') return colors.reset
+                      if (remaining < 0.2) return colors.red
+                      if (remaining < 0.6) return colors.orange
+                      return colors.green
+                    }
 
                     // Helper to create colored progress bar
                     const createProgressBar = (remaining?: number, width: number = 20): string => {
-                      if (typeof remaining !== 'number') return '░'.repeat(width) + ' ???';
-                      const filled = Math.round(remaining * width);
-                      const empty = width - filled;
-                      const color = getColor(remaining);
-                      const bar = `${color}${'█'.repeat(filled)}${colors.reset}${'░'.repeat(empty)}`;
-                      const pct = `${color}${Math.round(remaining * 100)}%${colors.reset}`.padStart(4 + color.length + colors.reset.length);
-                      return `${bar} ${pct}`;
-                    };
+                      if (typeof remaining !== 'number') return '░'.repeat(width) + ' ???'
+                      const filled = Math.round(remaining * width)
+                      const empty = width - filled
+                      const color = getColor(remaining)
+                      const bar = `${color}${'█'.repeat(filled)}${colors.reset}${'░'.repeat(empty)}`
+                      const pct = `${color}${Math.round(remaining * 100)}%${colors.reset}`.padStart(4 + color.length + colors.reset.length)
+                      return `${bar} ${pct}`
+                    }
 
                     // Helper to format reset time with days support
                     const formatReset = (resetTime?: string): string => {
-                      if (!resetTime) return '';
-                      const ms = Date.parse(resetTime) - Date.now();
-                      if (ms <= 0) return ' (resetting...)';
+                      if (!resetTime) return ''
+                      const ms = Date.parse(resetTime) - Date.now()
+                      if (ms <= 0) return ' (resetting...)'
                       
-                      const hours = ms / (1000 * 60 * 60);
+                      const hours = ms / (1000 * 60 * 60)
                       if (hours >= 24) {
-                        const days = Math.floor(hours / 24);
-                        const remainingHours = Math.floor(hours % 24);
+                        const days = Math.floor(hours / 24)
+                        const remainingHours = Math.floor(hours % 24)
                         if (remainingHours > 0) {
-                          return ` (resets in ${days}d ${remainingHours}h)`;
+                          return ` (resets in ${days}d ${remainingHours}h)`
                         }
-                        return ` (resets in ${days}d)`;
+                        return ` (resets in ${days}d)`
                       }
-                      return ` (resets in ${formatWaitTime(ms)})`;
-                    };
+                      return ` (resets in ${formatWaitTime(ms)})`
+                    }
 
                     // Display Gemini CLI Quota first (as requested - swap order)
-                    const hasGeminiCli = res.geminiCliQuota && res.geminiCliQuota.models.length > 0;
-                    console.log(`\n  ┌─ Gemini CLI Quota`);
+                    const hasGeminiCli = res.geminiCliQuota && res.geminiCliQuota.models.length > 0
+                    console.log(`\n  ┌─ Gemini CLI Quota`)
                     if (!hasGeminiCli) {
-                      const errorMsg = res.geminiCliQuota?.error || "No Gemini CLI quota available";
-                      console.log(`  │  └─ ${errorMsg}`);
+                      const errorMsg = res.geminiCliQuota?.error || "No Gemini CLI quota available"
+                      console.log(`  │  └─ ${errorMsg}`)
                     } else {
-                      const models = res.geminiCliQuota!.models;
+                      const models = res.geminiCliQuota!.models
                       models.forEach((model, idx) => {
-                        const isLast = idx === models.length - 1;
-                        const connector = isLast ? "└─" : "├─";
-                        const bar = createProgressBar(model.remainingFraction);
-                        const reset = formatReset(model.resetTime);
-                        const modelName = model.modelId.padEnd(29);
-                        console.log(`  │  ${connector} ${modelName} ${bar}${reset}`);
-                      });
+                        const isLast = idx === models.length - 1
+                        const connector = isLast ? "└─" : "├─"
+                        const bar = createProgressBar(model.remainingFraction)
+                        const reset = formatReset(model.resetTime)
+                        const modelName = model.modelId.padEnd(29)
+                        console.log(`  │  ${connector} ${modelName} ${bar}${reset}`)
+                      })
                     }
 
                     // Display Antigravity Quota second
-                    const hasAntigravity = res.quota && Object.keys(res.quota.groups).length > 0;
-                    console.log(`  │`);
-                    console.log(`  └─ Antigravity Quota`);
+                    const hasAntigravity = res.quota && Object.keys(res.quota.groups).length > 0
+                    console.log(`  │`)
+                    console.log(`  └─ Antigravity Quota`)
                     if (!hasAntigravity) {
-                      const errorMsg = res.quota?.error || "No quota information available";
-                      console.log(`     └─ ${errorMsg}`);
+                      const errorMsg = res.quota?.error || "No quota information available"
+                      console.log(`     └─ ${errorMsg}`)
                     } else {
-                      const groups = res.quota!.groups;
+                      const groups = res.quota!.groups
                       const groupEntries = [
                         { name: "Claude", data: groups.claude },
                         { name: "Gemini 3 Pro", data: groups["gemini-pro"] },
                         { name: "Gemini 3 Flash", data: groups["gemini-flash"] },
-                      ].filter(g => g.data);
+                      ].filter(g => g.data)
                       
                       groupEntries.forEach((g, idx) => {
-                        const isLast = idx === groupEntries.length - 1;
-                        const connector = isLast ? "└─" : "├─";
-                        const bar = createProgressBar(g.data!.remainingFraction);
-                        const reset = formatReset(g.data!.resetTime);
-                        const modelName = g.name.padEnd(29);
-                        console.log(`     ${connector} ${modelName} ${bar}${reset}`);
-                      });
+                        const isLast = idx === groupEntries.length - 1
+                        const connector = isLast ? "└─" : "├─"
+                        const bar = createProgressBar(g.data!.remainingFraction)
+                        const reset = formatReset(g.data!.resetTime)
+                        const modelName = g.name.padEnd(29)
+                        console.log(`     ${connector} ${modelName} ${bar}${reset}`)
+                      })
                     }
-                    console.log("");
+                    console.log("")
 
                     // Cache quota data for soft quota protection
                     if (res.quota?.groups) {
-                      const acc = existingStorage.accounts[res.index];
+                      const acc = existingStorage.accounts[res.index]
                       if (acc) {
-                        acc.cachedQuota = res.quota.groups;
-                        acc.cachedQuotaUpdatedAt = Date.now();
-                        storageUpdated = true;
+                        acc.cachedQuota = res.quota.groups
+                        acc.cachedQuotaUpdatedAt = Date.now()
+                        storageUpdated = true
                       }
                     }
 
@@ -2463,65 +2429,65 @@ export const createAntigravityPlugin = (providerId: string) => async (
                         ...res.updatedAccount,
                         cachedQuota: res.quota?.groups,
                         cachedQuotaUpdatedAt: Date.now(),
-                      };
-                      storageUpdated = true;
+                      }
+                      storageUpdated = true
                     }
                   }
                   if (storageUpdated) {
-                    await saveAccounts(existingStorage);
+                    await saveAccounts(existingStorage)
                   }
-                  console.log("");
-                  continue;
+                  console.log("")
+                  continue
                 }
 
                 if (menuResult.mode === "manage") {
                   if (menuResult.toggleAccountIndex !== undefined) {
-                    const acc = existingStorage.accounts[menuResult.toggleAccountIndex];
+                    const acc = existingStorage.accounts[menuResult.toggleAccountIndex]
                     if (acc) {
-                      acc.enabled = acc.enabled === false;
-                      await saveAccounts(existingStorage);
-                      activeAccountManager?.setAccountEnabled(menuResult.toggleAccountIndex, acc.enabled);
-                      console.log(`\nAccount ${acc.email || menuResult.toggleAccountIndex + 1} ${acc.enabled ? 'enabled' : 'disabled'}.\n`);
+                      acc.enabled = acc.enabled === false
+                      await saveAccounts(existingStorage)
+                      activeAccountManager?.setAccountEnabled(menuResult.toggleAccountIndex, acc.enabled)
+                      console.log(`\nAccount ${acc.email || menuResult.toggleAccountIndex + 1} ${acc.enabled ? 'enabled' : 'disabled'}.\n`)
                     }
                   }
-                  continue;
+                  continue
                 }
 
                 if (menuResult.mode === "verify" || menuResult.mode === "verify-all") {
-                  const verifyAll = menuResult.mode === "verify-all" || menuResult.verifyAll === true;
+                  const verifyAll = menuResult.mode === "verify-all" || menuResult.verifyAll === true
 
                   if (verifyAll) {
                     if (existingStorage.accounts.length === 0) {
-                      console.log("\nNo accounts available to verify.\n");
-                      continue;
+                      console.log("\nNo accounts available to verify.\n")
+                      continue
                     }
 
-                    console.log(`\nChecking verification status for ${existingStorage.accounts.length} account(s)...\n`);
+                    console.log(`\nChecking verification status for ${existingStorage.accounts.length} account(s)...\n`)
 
-                    let okCount = 0;
-                    let blockedCount = 0;
-                    let errorCount = 0;
-                    let storageUpdated = false;
+                    let okCount = 0
+                    let blockedCount = 0
+                    let errorCount = 0
+                    let storageUpdated = false
 
-                    const blockedResults: Array<{ label: string; message: string; verifyUrl?: string }> = [];
+                    const blockedResults: Array<{ label: string; message: string; verifyUrl?: string }> = []
 
                     for (let i = 0; i < existingStorage.accounts.length; i++) {
-                      const account = existingStorage.accounts[i];
-                      if (!account) continue;
+                      const account = existingStorage.accounts[i]
+                      if (!account) continue
 
-                      const label = account.email || `Account ${i + 1}`;
-                      process.stdout.write(`- [${i + 1}/${existingStorage.accounts.length}] ${label} ... `);
+                      const label = account.email || `Account ${i + 1}`
+                      process.stdout.write(`- [${i + 1}/${existingStorage.accounts.length}] ${label} ... `)
 
-                      const verification = await verifyAccountAccess(account, client, providerId);
+                      const verification = await verifyAccountAccess(account, client, providerId)
                       if (verification.status === "ok") {
-                        const { changed, wasVerificationRequired } = clearStoredAccountVerificationRequired(account, true);
+                        const { changed, wasVerificationRequired } = clearStoredAccountVerificationRequired(account, true)
                         if (changed) {
-                          storageUpdated = true;
+                          storageUpdated = true
                         }
-                        activeAccountManager?.clearAccountVerificationRequired(i, wasVerificationRequired);
-                        okCount += 1;
-                        console.log("ok");
-                        continue;
+                        activeAccountManager?.clearAccountVerificationRequired(i, wasVerificationRequired)
+                        okCount += 1
+                        console.log("ok")
+                        continue
                       }
 
                       if (verification.status === "blocked") {
@@ -2529,86 +2495,86 @@ export const createAntigravityPlugin = (providerId: string) => async (
                           account,
                           verification.message,
                           verification.verifyUrl,
-                        );
+                        )
                         if (changed) {
-                          storageUpdated = true;
+                          storageUpdated = true
                         }
-                        activeAccountManager?.markAccountVerificationRequired(i, verification.message, verification.verifyUrl);
+                        activeAccountManager?.markAccountVerificationRequired(i, verification.message, verification.verifyUrl)
 
-                        blockedCount += 1;
-                        console.log("needs verification");
-                        const verifyUrl = verification.verifyUrl ?? account.verificationUrl;
+                        blockedCount += 1
+                        console.log("needs verification")
+                        const verifyUrl = verification.verifyUrl ?? account.verificationUrl
                         blockedResults.push({
                           label,
                           message: verification.message,
                           verifyUrl,
-                        });
-                        continue;
+                        })
+                        continue
                       }
 
-                      errorCount += 1;
-                      console.log(`error (${verification.message})`);
+                      errorCount += 1
+                      console.log(`error (${verification.message})`)
                     }
 
                     if (storageUpdated) {
-                      await saveAccounts(existingStorage);
+                      await saveAccounts(existingStorage)
                     }
 
-                    console.log(`\nVerification summary: ${okCount} ready, ${blockedCount} need verification, ${errorCount} errors.`);
+                    console.log(`\nVerification summary: ${okCount} ready, ${blockedCount} need verification, ${errorCount} errors.`)
 
                     if (blockedResults.length > 0) {
-                      console.log("\nAccounts needing verification:");
+                      console.log("\nAccounts needing verification:")
                       for (const result of blockedResults) {
-                        console.log(`\n- ${result.label}`);
-                        console.log(`  ${result.message}`);
+                        console.log(`\n- ${result.label}`)
+                        console.log(`  ${result.message}`)
                         if (result.verifyUrl) {
-                          console.log(`  URL: ${result.verifyUrl}`);
+                          console.log(`  URL: ${result.verifyUrl}`)
                         } else {
-                          console.log("  URL: not provided by API response");
+                          console.log("  URL: not provided by API response")
                         }
                       }
-                      console.log("");
+                      console.log("")
                     } else {
-                      console.log("");
+                      console.log("")
                     }
 
-                    continue;
+                    continue
                   }
 
-                  let verifyAccountIndex = menuResult.verifyAccountIndex;
+                  let verifyAccountIndex = menuResult.verifyAccountIndex
                   if (verifyAccountIndex === undefined) {
-                    verifyAccountIndex = await promptAccountIndexForVerification(existingAccounts);
+                    verifyAccountIndex = await promptAccountIndexForVerification(existingAccounts)
                   }
 
                   if (verifyAccountIndex === undefined) {
-                    console.log("\nVerification cancelled.\n");
-                    continue;
+                    console.log("\nVerification cancelled.\n")
+                    continue
                   }
 
-                  const account = existingStorage.accounts[verifyAccountIndex];
+                  const account = existingStorage.accounts[verifyAccountIndex]
                   if (!account) {
-                    console.log(`\nAccount ${verifyAccountIndex + 1} not found.\n`);
-                    continue;
+                    console.log(`\nAccount ${verifyAccountIndex + 1} not found.\n`)
+                    continue
                   }
 
-                  const label = account.email || `Account ${verifyAccountIndex + 1}`;
-                  console.log(`\nChecking verification status for ${label}...\n`);
+                  const label = account.email || `Account ${verifyAccountIndex + 1}`
+                  console.log(`\nChecking verification status for ${label}...\n`)
 
-                  const verification = await verifyAccountAccess(account, client, providerId);
+                  const verification = await verifyAccountAccess(account, client, providerId)
 
                   if (verification.status === "ok") {
-                    const { changed, wasVerificationRequired } = clearStoredAccountVerificationRequired(account, true);
+                    const { changed, wasVerificationRequired } = clearStoredAccountVerificationRequired(account, true)
                     if (changed) {
-                      await saveAccounts(existingStorage);
+                      await saveAccounts(existingStorage)
                     }
-                    activeAccountManager?.clearAccountVerificationRequired(verifyAccountIndex, wasVerificationRequired);
+                    activeAccountManager?.clearAccountVerificationRequired(verifyAccountIndex, wasVerificationRequired)
 
                     if (wasVerificationRequired) {
-                      console.log(`✓ ${label} is ready for requests and has been re-enabled.\n`);
+                      console.log(`✓ ${label} is ready for requests and has been re-enabled.\n`)
                     } else {
-                      console.log(`✓ ${label} is ready for requests.\n`);
+                      console.log(`✓ ${label} is ready for requests.\n`)
                     }
-                    continue;
+                    continue
                   }
 
                   if (verification.status === "blocked") {
@@ -2616,43 +2582,43 @@ export const createAntigravityPlugin = (providerId: string) => async (
                       account,
                       verification.message,
                       verification.verifyUrl,
-                    );
+                    )
                     if (changed) {
-                      await saveAccounts(existingStorage);
+                      await saveAccounts(existingStorage)
                     }
                     activeAccountManager?.markAccountVerificationRequired(
                       verifyAccountIndex,
                       verification.message,
                       verification.verifyUrl,
-                    );
+                    )
 
-                    const verifyUrl = verification.verifyUrl ?? account.verificationUrl;
-                    console.log(`⚠ ${label} needs Google verification before it can be used.`);
+                    const verifyUrl = verification.verifyUrl ?? account.verificationUrl
+                    console.log(`⚠ ${label} needs Google verification before it can be used.`)
                     if (verification.message) {
-                      console.log(verification.message);
+                      console.log(verification.message)
                     }
-                    console.log(`${label} has been disabled until verification is completed.`);
+                    console.log(`${label} has been disabled until verification is completed.`)
                     if (verifyUrl) {
-                      console.log(`\nVerification URL:\n${verifyUrl}\n`);
+                      console.log(`\nVerification URL:\n${verifyUrl}\n`)
                       if (await promptOpenVerificationUrl()) {
-                        const opened = await openBrowser(verifyUrl);
+                        const opened = await openBrowser(verifyUrl)
                         if (opened) {
-                          console.log("Opened verification URL in your browser.\n");
+                          console.log("Opened verification URL in your browser.\n")
                         } else {
-                          console.log("Could not open browser automatically. Please open the URL manually.\n");
+                          console.log("Could not open browser automatically. Please open the URL manually.\n")
                         }
                       }
                     } else {
-                      console.log("No verification URL was returned. Try re-authenticating this account.\n");
+                      console.log("No verification URL was returned. Try re-authenticating this account.\n")
                     }
-                    continue;
+                    continue
                   }
 
-                  console.log(`✗ ${label}: ${verification.message}\n`);
-                  continue;
+                  console.log(`✗ ${label}: ${verification.message}\n`)
+                  continue
                 }
 
-                break;
+                break
               }
               
               if (menuResult.mode === "cancel") {
@@ -2661,44 +2627,44 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   instructions: "Authentication cancelled",
                   method: "auto",
                   callback: async () => ({ type: "failed", error: "Authentication cancelled" }),
-                };
+                }
               }
               
               if (menuResult.deleteAccountIndex !== undefined) {
                 const updatedAccounts = existingStorage.accounts.filter(
                   (_, idx) => idx !== menuResult.deleteAccountIndex
-                );
+                )
                 // Use saveAccountsReplace to bypass merge (otherwise deleted account gets merged back)
                 await saveAccountsReplace({
                   version: 4,
                   accounts: updatedAccounts,
                   activeIndex: 0,
                   activeIndexByFamily: { claude: 0, gemini: 0 },
-                });
+                })
                 // Sync in-memory state so deleted account stops being used immediately
-                activeAccountManager?.removeAccountByIndex(menuResult.deleteAccountIndex);
-                console.log("\nAccount deleted.\n");
+                activeAccountManager?.removeAccountByIndex(menuResult.deleteAccountIndex)
+                console.log("\nAccount deleted.\n")
 
                 if (updatedAccounts.length > 0) {
-                  const fallbackAccount = updatedAccounts[0];
+                  const fallbackAccount = updatedAccounts[0]
                   if (fallbackAccount?.refreshToken) {
-                    const fallbackResult = buildAuthSuccessFromStoredAccount(fallbackAccount);
+                    const fallbackResult = buildAuthSuccessFromStoredAccount(fallbackAccount)
                     try {
                       await client.auth.set({
                         path: { id: providerId },
                         body: { type: "oauth", refresh: fallbackResult.refresh, access: "", expires: 0 },
-                      });
+                      })
                     } catch (storeError) {
-                      log.error("Failed to update stored Antigravity OAuth credentials", { error: String(storeError) });
+                      log.error("Failed to update stored Antigravity OAuth credentials", { error: String(storeError) })
                     }
 
-                    const label = fallbackAccount.email || `Account ${1}`;
+                    const label = fallbackAccount.email || `Account ${1}`
                     return {
                       url: "",
                       instructions: `Account deleted. Using ${label} for future requests.`,
                       method: "auto",
                       callback: async () => fallbackResult,
-                    };
+                    }
                   }
                 }
 
@@ -2706,9 +2672,9 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   await client.auth.set({
                     path: { id: providerId },
                     body: { type: "oauth", refresh: "", access: "", expires: 0 },
-                  });
+                  })
                 } catch (storeError) {
-                  log.error("Failed to clear stored Antigravity OAuth credentials", { error: String(storeError) });
+                  log.error("Failed to clear stored Antigravity OAuth credentials", { error: String(storeError) })
                 }
 
                 return {
@@ -2719,125 +2685,125 @@ export const createAntigravityPlugin = (providerId: string) => async (
                     type: "failed",
                     error: "All accounts deleted. Reauthentication required.",
                   }),
-                };
+                }
               }
 
               if (menuResult.refreshAccountIndex !== undefined) {
-                refreshAccountIndex = menuResult.refreshAccountIndex;
-                const refreshEmail = existingStorage.accounts[refreshAccountIndex]?.email;
-                console.log(`\nRe-authenticating ${refreshEmail || 'account'}...\n`);
-                startFresh = false;
+                refreshAccountIndex = menuResult.refreshAccountIndex
+                const refreshEmail = existingStorage.accounts[refreshAccountIndex]?.email
+                console.log(`\nRe-authenticating ${refreshEmail || 'account'}...\n`)
+                startFresh = false
               }
               
               if (menuResult.deleteAll) {
-                await clearAccounts();
-                console.log("\nAll accounts deleted.\n");
-                startFresh = true;
+                await clearAccounts()
+                console.log("\nAll accounts deleted.\n")
+                startFresh = true
                 try {
                   await client.auth.set({
                     path: { id: providerId },
                     body: { type: "oauth", refresh: "", access: "", expires: 0 },
-                  });
+                  })
                 } catch (storeError) {
-                  log.error("Failed to clear stored Antigravity OAuth credentials", { error: String(storeError) });
+                  log.error("Failed to clear stored Antigravity OAuth credentials", { error: String(storeError) })
                 }
               } else {
-                startFresh = menuResult.mode === "fresh";
+                startFresh = menuResult.mode === "fresh"
               }
               
               if (startFresh && !menuResult.deleteAll) {
-                console.log("\nStarting fresh - existing accounts will be replaced.\n");
+                console.log("\nStarting fresh - existing accounts will be replaced.\n")
               } else if (!startFresh) {
-                console.log("\nAdding to existing accounts.\n");
+                console.log("\nAdding to existing accounts.\n")
               }
             }
 
             while (accounts.length < MAX_OAUTH_ACCOUNTS) {
-              console.log(`\n=== Antigravity OAuth (Account ${accounts.length + 1}) ===`);
+              console.log(`\n=== Antigravity OAuth (Account ${accounts.length + 1}) ===`)
 
-              const projectId = "";
+              const projectId = ""
 
               const result = await (async (): Promise<AntigravityTokenExchangeResult> => {
-                const authorization = await authorizeAntigravity();
-                const fallbackState = getStateFromAuthorizationUrl(authorization.url);
+                const authorization = await authorizeAntigravity()
+                const fallbackState = getStateFromAuthorizationUrl(authorization.url)
 
-                console.log("\nOAuth URL:\n" + authorization.url + "\n");
+                console.log("\nOAuth URL:\n" + authorization.url + "\n")
 
                 if (useManualMode) {
-                  const browserOpened = await openBrowser(authorization.url);
+                  const browserOpened = await openBrowser(authorization.url)
                   if (!browserOpened) {
-                    console.log("Could not open browser automatically.");
-                    console.log("Please open the URL above manually in your local browser.\n");
+                    console.log("Could not open browser automatically.")
+                    console.log("Please open the URL above manually in your local browser.\n")
                   }
-                  return promptManualOAuthInput(fallbackState);
+                  return promptManualOAuthInput(fallbackState)
                 }
 
-                let listener: OAuthListener | null = null;
+                let listener: OAuthListener | null = null
                 if (!isHeadless) {
                   try {
-                    listener = await startOAuthListener();
+                    listener = await startOAuthListener()
                   } catch {
-                    listener = null;
+                    listener = null
                   }
                 }
 
                 if (!isHeadless) {
-                  await openBrowser(authorization.url);
+                  await openBrowser(authorization.url)
                 }
 
                 if (listener) {
                   try {
-                    const SOFT_TIMEOUT_MS = 30000;
-                    const callbackPromise = listener.waitForCallback();
+                    const SOFT_TIMEOUT_MS = 30000
+                    const callbackPromise = listener.waitForCallback()
                     const timeoutPromise = new Promise<never>((_, reject) =>
                       setTimeout(() => reject(new Error("SOFT_TIMEOUT")), SOFT_TIMEOUT_MS)
-                    );
+                    )
 
-                    let callbackUrl: URL;
+                    let callbackUrl: URL
                     try {
-                      callbackUrl = await Promise.race([callbackPromise, timeoutPromise]);
+                      callbackUrl = await Promise.race([callbackPromise, timeoutPromise])
                     } catch (err) {
                       if (err instanceof Error && err.message === "SOFT_TIMEOUT") {
-                        console.log("\n⏳ Automatic callback not received after 30 seconds.");
-                        console.log("You can paste the redirect URL manually.\n");
-                        console.log("OAuth URL (in case you need it again):");
-                        console.log(authorization.url + "\n");
+                        console.log("\n⏳ Automatic callback not received after 30 seconds.")
+                        console.log("You can paste the redirect URL manually.\n")
+                        console.log("OAuth URL (in case you need it again):")
+                        console.log(authorization.url + "\n")
                         
                         try {
-                          await listener.close();
+                          await listener.close()
                         } catch {}
                         
-                        return promptManualOAuthInput(fallbackState);
+                        return promptManualOAuthInput(fallbackState)
                       }
-                      throw err;
+                      throw err
                     }
 
-                    const params = extractOAuthCallbackParams(callbackUrl);
+                    const params = extractOAuthCallbackParams(callbackUrl)
                     if (!params) {
-                      return { type: "failed", error: "Missing code or state in callback URL" };
+                      return { type: "failed", error: "Missing code or state in callback URL" }
                     }
 
-                    return exchangeAntigravity(params.code, params.state);
+                    return exchangeAntigravity(params.code, params.state)
                   } catch (error) {
                     if (error instanceof Error && error.message !== "SOFT_TIMEOUT") {
                       return {
                         type: "failed",
                         error: error.message,
-                      };
+                      }
                     }
                     return {
                       type: "failed",
                       error: error instanceof Error ? error.message : "Unknown error",
-                    };
+                    }
                   } finally {
                     try {
-                      await listener.close();
+                      await listener.close()
                     } catch {}
                   }
                 }
 
-                return promptManualOAuthInput(fallbackState);
-              })();
+                return promptManualOAuthInput(fallbackState)
+              })()
 
               if (result.type === "failed") {
                 if (accounts.length === 0) {
@@ -2846,25 +2812,25 @@ export const createAntigravityPlugin = (providerId: string) => async (
                     instructions: `Authentication failed: ${result.error}`,
                     method: "auto",
                     callback: async () => result,
-                  };
+                  }
                 }
 
                 console.warn(
                   `[opencode-antigravity-auth] Skipping failed account ${accounts.length + 1}: ${result.error}`,
-                );
-                break;
+                )
+                break
               }
 
-              accounts.push(result);
+              accounts.push(result)
 
-              toast.success(`Account ${accounts.length} authenticated${result.email ? ` (${result.email})` : ""}`);
+              toast.success(`Account ${accounts.length} authenticated${result.email ? ` (${result.email})` : ""}`)
 
               try {
                 if (refreshAccountIndex !== undefined) {
-                  const currentStorage = await loadAccounts();
+                  const currentStorage = await loadAccounts()
                   if (currentStorage) {
-                    const updatedAccounts = [...currentStorage.accounts];
-                    const parts = parseRefreshParts(result.refresh);
+                    const updatedAccounts = [...currentStorage.accounts]
+                    const parts = parseRefreshParts(result.refresh)
                     if (parts.refreshToken) {
                       updatedAccounts[refreshAccountIndex] = {
                         email: result.email ?? updatedAccounts[refreshAccountIndex]?.email,
@@ -2873,106 +2839,106 @@ export const createAntigravityPlugin = (providerId: string) => async (
                         managedProjectId: parts.managedProjectId ?? updatedAccounts[refreshAccountIndex]?.managedProjectId,
                         addedAt: updatedAccounts[refreshAccountIndex]?.addedAt ?? Date.now(),
                         lastUsed: Date.now(),
-                      };
+                      }
                       await saveAccounts({
                         version: 4,
                         accounts: updatedAccounts,
                         activeIndex: currentStorage.activeIndex,
                         activeIndexByFamily: currentStorage.activeIndexByFamily,
-                      });
+                      })
                     }
                   }
                 } else {
-                  const isFirstAccount = accounts.length === 1;
-                  await persistAccountPool([result], isFirstAccount && startFresh);
+                  const isFirstAccount = accounts.length === 1
+                  await persistAccountPool([result], isFirstAccount && startFresh)
                 }
               } catch {
               }
 
               if (refreshAccountIndex !== undefined) {
-                break;
+                break
               }
 
               if (accounts.length >= MAX_OAUTH_ACCOUNTS) {
-                break;
+                break
               }
 
               // Get the actual deduplicated account count from storage for the prompt
-              let currentAccountCount = accounts.length;
+              let currentAccountCount = accounts.length
               try {
-                const currentStorage = await loadAccounts();
+                const currentStorage = await loadAccounts()
                 if (currentStorage) {
-                  currentAccountCount = currentStorage.accounts.length;
+                  currentAccountCount = currentStorage.accounts.length
                 }
               } catch {
                 // Fall back to accounts.length if we can't read storage
               }
 
-              const addAnother = await promptAddAnotherAccount(currentAccountCount);
+              const addAnother = await promptAddAnotherAccount(currentAccountCount)
               if (!addAnother) {
-                break;
+                break
               }
             }
 
-            const primary = accounts[0];
+            const primary = accounts[0]
             if (!primary) {
               return {
                 url: "",
                 instructions: "Authentication cancelled",
                 method: "auto",
                 callback: async () => ({ type: "failed", error: "Authentication cancelled" }),
-              };
+              }
             }
 
-            let actualAccountCount = accounts.length;
+            let actualAccountCount = accounts.length
             try {
-              const finalStorage = await loadAccounts();
+              const finalStorage = await loadAccounts()
               if (finalStorage) {
-                actualAccountCount = finalStorage.accounts.length;
+                actualAccountCount = finalStorage.accounts.length
               }
             } catch {
             }
 
             const successMessage = refreshAccountIndex !== undefined
               ? `Token refreshed successfully.`
-              : `Multi-account setup complete (${actualAccountCount} account(s)).`;
+              : `Multi-account setup complete (${actualAccountCount} account(s)).`
 
             return {
               url: "",
               instructions: successMessage,
               method: "auto",
               callback: async (): Promise<AntigravityTokenExchangeResult> => primary,
-            };
+            }
           }
 
           // TUI flow (`/connect`) does not support per-account prompts.
           // Default to adding new accounts (non-destructive).
           // Users can run `opencode auth logout` first if they want a fresh start.
-          const projectId = "";
+          const projectId = ""
 
           // Check existing accounts count for toast message
-          const existingStorage = await loadAccounts();
-          const existingCount = existingStorage?.accounts.length ?? 0;
+          const existingStorage = await loadAccounts()
+          const existingCount = existingStorage?.accounts.length ?? 0
 
-          const useManualFlow = isHeadless || shouldSkipLocalServer();
+          const useManualFlow = isHeadless || shouldSkipLocalServer()
 
-          let listener: OAuthListener | null = null;
+          let listener: OAuthListener | null = null
           if (!useManualFlow) {
             try {
-              listener = await startOAuthListener();
+              listener = await startOAuthListener()
             } catch {
-              listener = null;
+              listener = null
             }
           }
 
-          const authorization = await authorizeAntigravity();
-          const fallbackState = getStateFromAuthorizationUrl(authorization.url);
+          const authorization = await authorizeAntigravity()
+          const fallbackState = getStateFromAuthorizationUrl(authorization.url)
 
           if (!useManualFlow) {
-            const browserOpened = await openBrowser(authorization.url);
+            const browserOpened = await openBrowser(authorization.url)
             if (!browserOpened) {
-              listener?.close().catch(() => {});
-              listener = null;
+              listener?.close().catch(() => {})
+              listener = null
             }
           }
 
@@ -2983,60 +2949,60 @@ export const createAntigravityPlugin = (providerId: string) => async (
                 "Complete sign-in in your browser. We'll automatically detect the redirect back to localhost.",
               method: "auto",
               callback: async (): Promise<AntigravityTokenExchangeResult> => {
-                const CALLBACK_TIMEOUT_MS = 30000;
+                const CALLBACK_TIMEOUT_MS = 30000
                 try {
-                  const callbackPromise = listener.waitForCallback();
+                  const callbackPromise = listener.waitForCallback()
                   const timeoutPromise = new Promise<never>((_, reject) =>
                     setTimeout(() => reject(new Error("CALLBACK_TIMEOUT")), CALLBACK_TIMEOUT_MS),
-                  );
+                  )
 
-                  let callbackUrl: URL;
+                  let callbackUrl: URL
                   try {
-                    callbackUrl = await Promise.race([callbackPromise, timeoutPromise]);
+                    callbackUrl = await Promise.race([callbackPromise, timeoutPromise])
                   } catch (err) {
                     if (err instanceof Error && err.message === "CALLBACK_TIMEOUT") {
                       return {
                         type: "failed",
                         error: "Callback timeout - please use CLI with --no-browser flag for manual input",
-                      };
+                      }
                     }
-                    throw err;
+                    throw err
                   }
 
-                  const params = extractOAuthCallbackParams(callbackUrl);
+                  const params = extractOAuthCallbackParams(callbackUrl)
                   if (!params) {
-                    return { type: "failed", error: "Missing code or state in callback URL" };
+                    return { type: "failed", error: "Missing code or state in callback URL" }
                   }
 
-                  const result = await exchangeAntigravity(params.code, params.state);
+                  const result = await exchangeAntigravity(params.code, params.state)
                   if (result.type === "success") {
                     try {
-                      await persistAccountPool([result], false);
+                      await persistAccountPool([result], false)
                     } catch {
                     }
 
-                    const newTotal = existingCount + 1;
+                    const newTotal = existingCount + 1
                     const toastMessage = existingCount > 0
                       ? `Added account${result.email ? ` (${result.email})` : ""} - ${newTotal} total`
-                      : `Authenticated${result.email ? ` (${result.email})` : ""}`;
+                      : `Authenticated${result.email ? ` (${result.email})` : ""}`
 
-                    toast.success(toastMessage);
+                    toast.success(toastMessage)
                   }
 
-                  return result;
+                  return result
                 } catch (error) {
                   return {
                     type: "failed",
                     error: error instanceof Error ? error.message : "Unknown error",
-                  };
+                  }
                 } finally {
                   try {
-                    await listener.close();
+                    await listener.close()
                   } catch {
                   }
                 }
               },
-            };
+            }
           }
 
           return {
@@ -3045,32 +3011,32 @@ export const createAntigravityPlugin = (providerId: string) => async (
               "Visit the URL above, complete OAuth, then paste either the full redirect URL or the authorization code.",
             method: "code",
             callback: async (codeInput: string): Promise<AntigravityTokenExchangeResult> => {
-              const params = parseOAuthCallbackInput(codeInput, fallbackState);
+              const params = parseOAuthCallbackInput(codeInput, fallbackState)
               if ("error" in params) {
-                return { type: "failed", error: params.error };
+                return { type: "failed", error: params.error }
               }
 
-              const result = await exchangeAntigravity(params.code, params.state);
+              const result = await exchangeAntigravity(params.code, params.state)
               if (result.type === "success") {
                 try {
                   // TUI flow adds to existing accounts (non-destructive)
-                  await persistAccountPool([result], false);
+                  await persistAccountPool([result], false)
                 } catch {
                   // ignore
                 }
 
                 // Show appropriate toast message
-                const newTotal = existingCount + 1;
+                const newTotal = existingCount + 1
                 const toastMessage = existingCount > 0
                   ? `Added account${result.email ? ` (${result.email})` : ""} - ${newTotal} total`
-                  : `Authenticated${result.email ? ` (${result.email})` : ""}`;
+                  : `Authenticated${result.email ? ` (${result.email})` : ""}`
 
-                toast.success(toastMessage);
+                toast.success(toastMessage)
               }
 
-              return result;
+              return result
             },
-          };
+          }
         },
       },
       {
@@ -3079,98 +3045,98 @@ export const createAntigravityPlugin = (providerId: string) => async (
       },
     ],
   },
-  };
-};
+  }
+}
 
-export const AntigravityCLIOAuthPlugin = createAntigravityPlugin(ANTIGRAVITY_PROVIDER_ID);
-export const GoogleOAuthPlugin = AntigravityCLIOAuthPlugin;
+export const AntigravityCLIOAuthPlugin = createAntigravityPlugin(ANTIGRAVITY_PROVIDER_ID)
+export const GoogleOAuthPlugin = AntigravityCLIOAuthPlugin
 
 function toUrlString(value: RequestInfo): string {
   if (typeof value === "string") {
-    return value;
+    return value
   }
-  const candidate = (value as Request).url;
+  const candidate = (value as Request).url
   if (candidate) {
-    return candidate;
+    return candidate
   }
-  return value.toString();
+  return value.toString()
 }
 
 function toWarmupStreamUrl(value: RequestInfo): string {
-  const urlString = toUrlString(value);
+  const urlString = toUrlString(value)
   try {
-    const url = new URL(urlString);
+    const url = new URL(urlString)
     if (!url.pathname.includes(":streamGenerateContent")) {
-      url.pathname = url.pathname.replace(":generateContent", ":streamGenerateContent");
+      url.pathname = url.pathname.replace(":generateContent", ":streamGenerateContent")
     }
-    url.searchParams.set("alt", "sse");
-    return url.toString();
+    url.searchParams.set("alt", "sse")
+    return url.toString()
   } catch {
-    return urlString;
+    return urlString
   }
 }
 
 function extractModelFromUrl(urlString: string): string | null {
-  const match = urlString.match(/\/models\/([^:\/?]+)(?::\w+)?/);
-  return match?.[1] ?? null;
+  const match = urlString.match(/\/models\/([^:\/?]+)(?::\w+)?/)
+  return match?.[1] ?? null
 }
 
 function extractModelFromUrlWithSuffix(urlString: string): string | null {
-  const match = urlString.match(/\/models\/([^:\/\?]+)/);
-  return match?.[1] ?? null;
+  const match = urlString.match(/\/models\/([^:\/\?]+)/)
+  return match?.[1] ?? null
 }
 
 function getModelFamilyFromUrl(urlString: string): ModelFamily {
-  const model = extractModelFromUrl(urlString);
-  let family: ModelFamily = "gemini";
+  const model = extractModelFromUrl(urlString)
+  let family: ModelFamily = "gemini"
   if (model && model.includes("claude")) {
-    family = "claude";
+    family = "claude"
   }
   if (isDebugEnabled()) {
-    logModelFamily(urlString, model, family);
+    logModelFamily(urlString, model, family)
   }
-  return family;
+  return family
 }
 
 function resolveQuotaFallbackHeaderStyle(input: {
-  family: ModelFamily;
-  headerStyle: HeaderStyle;
-  alternateStyle: HeaderStyle | null;
+  family: ModelFamily
+  headerStyle: HeaderStyle
+  alternateStyle: HeaderStyle | null
 }): HeaderStyle | null {
   if (input.family !== "gemini") {
-    return null;
+    return null
   }
   if (!input.alternateStyle || input.alternateStyle === input.headerStyle) {
-    return null;
+    return null
   }
-  return input.alternateStyle;
+  return input.alternateStyle
 }
 
 type HeaderRoutingDecision = {
-  cliFirst: boolean;
-  preferredHeaderStyle: HeaderStyle;
-  explicitQuota: boolean;
-  allowQuotaFallback: boolean;
-};
+  cliFirst: boolean
+  preferredHeaderStyle: HeaderStyle
+  explicitQuota: boolean
+  allowQuotaFallback: boolean
+}
 
 function resolveHeaderRoutingDecision(
   urlString: string,
   family: ModelFamily,
   config: AntigravityConfig,
 ): HeaderRoutingDecision {
-  const cliFirst = getCliFirst(config);
-  const preferredHeaderStyle = getHeaderStyleFromUrl(urlString, family, cliFirst);
-  const explicitQuota = isExplicitQuotaFromUrl(urlString);
+  const cliFirst = getCliFirst(config)
+  const preferredHeaderStyle = getHeaderStyleFromUrl(urlString, family, cliFirst)
+  const explicitQuota = isExplicitQuotaFromUrl(urlString)
   return {
     cliFirst,
     preferredHeaderStyle,
     explicitQuota,
     allowQuotaFallback: family === "gemini",
-  };
+  }
 }
 
 function getCliFirst(config: AntigravityConfig): boolean {
-  return (config as AntigravityConfig & { cli_first?: boolean }).cli_first ?? true;
+  return (config as AntigravityConfig & { cli_first?: boolean }).cli_first ?? true
 }
 
 function getHeaderStyleFromUrl(
@@ -3179,27 +3145,27 @@ function getHeaderStyleFromUrl(
   cliFirst: boolean = false,
 ): HeaderStyle {
   if (family === "claude") {
-    return "antigravity";
+    return "antigravity"
   }
-  const modelWithSuffix = extractModelFromUrlWithSuffix(urlString);
+  const modelWithSuffix = extractModelFromUrlWithSuffix(urlString)
   if (!modelWithSuffix) {
-    return cliFirst ? "gemini-cli" : "antigravity";
+    return cliFirst ? "gemini-cli" : "antigravity"
   }
-  const { quotaPreference } = resolveModelWithTier(modelWithSuffix, { cli_first: cliFirst });
-  return quotaPreference ?? "antigravity";
+  const { quotaPreference } = resolveModelWithTier(modelWithSuffix, { cli_first: cliFirst })
+  return quotaPreference ?? "antigravity"
 }
 
 function isExplicitQuotaFromUrl(urlString: string): boolean {
-  const modelWithSuffix = extractModelFromUrlWithSuffix(urlString);
+  const modelWithSuffix = extractModelFromUrlWithSuffix(urlString)
   if (!modelWithSuffix) {
-    return false;
+    return false
   }
-  const { explicitQuota } = resolveModelWithTier(modelWithSuffix);
-  return explicitQuota ?? false;
+  const { explicitQuota } = resolveModelWithTier(modelWithSuffix)
+  return explicitQuota ?? false
 }
 
 export const __testExports = {
   getHeaderStyleFromUrl,
   resolveHeaderRoutingDecision,
   resolveQuotaFallbackHeaderStyle,
-};
+}

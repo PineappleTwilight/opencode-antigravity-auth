@@ -6,23 +6,23 @@
  */
 
 export class ConcurrencyTracker {
-  private readonly activeRequests = new Map<number, number>();
+  private readonly activeRequests = new Map<number, number>()
 
   /**
    * Record a new active request for an account.
    */
   increment(accountIndex: number): void {
-    const current = this.activeRequests.get(accountIndex) ?? 0;
-    this.activeRequests.set(accountIndex, current + 1);
+    const current = this.activeRequests.get(accountIndex) ?? 0
+    this.activeRequests.set(accountIndex, current + 1)
   }
 
   /**
    * Record request completion for an account.
    */
   decrement(accountIndex: number): void {
-    const current = this.activeRequests.get(accountIndex) ?? 0;
+    const current = this.activeRequests.get(accountIndex) ?? 0
     if (current > 0) {
-      this.activeRequests.set(accountIndex, current - 1);
+      this.activeRequests.set(accountIndex, current - 1)
     }
   }
 
@@ -30,22 +30,22 @@ export class ConcurrencyTracker {
    * Get number of active requests for an account.
    */
   getActiveCount(accountIndex: number): number {
-    return this.activeRequests.get(accountIndex) ?? 0;
+    return this.activeRequests.get(accountIndex) ?? 0
   }
 
   /**
    * Reset tracking for an account.
    */
   reset(accountIndex: number): void {
-    this.activeRequests.delete(accountIndex);
+    this.activeRequests.delete(accountIndex)
   }
 }
 
-let globalConcurrencyTracker: ConcurrencyTracker | null = null;
+let globalConcurrencyTracker: ConcurrencyTracker | null = null
 
 export function getConcurrencyTracker(): ConcurrencyTracker {
   if (!globalConcurrencyTracker) {
-    globalConcurrencyTracker = new ConcurrencyTracker();
+    globalConcurrencyTracker = new ConcurrencyTracker()
   }
-  return globalConcurrencyTracker;
+  return globalConcurrencyTracker
 }

@@ -43,7 +43,7 @@ describe("selectHybridAccount improved scoring", () => {
     getTokens: () => 50,
     getMaxTokens: () => 50,
     getModelCost: () => 5
-  } as unknown as TokenBucketTracker;
+  } as unknown as TokenBucketTracker
 
   it("prefers accounts with better quota health", () => {
     const accounts = [
@@ -63,11 +63,11 @@ describe("selectHybridAccount improved scoring", () => {
         isCoolingDown: false,
         remainingQuotaFraction: 0.8
       }
-    ];
+    ]
 
-    const selected = selectHybridAccount(accounts, mockTokenTracker);
-    expect(selected).toBe(1); // Account 1 has better quota health
-  });
+    const selected = selectHybridAccount(accounts, mockTokenTracker)
+    expect(selected).toBe(1)// Account 1 has better quota health
+  })
 
   it("overrides conversation stickiness when advantage is over 500", () => {
     // Account 0 is the session match, but Account 1 is much healthier
@@ -88,7 +88,7 @@ describe("selectHybridAccount improved scoring", () => {
         isCoolingDown: false,
         remainingQuotaFraction: 1.0 // Full quota
       }
-    ];
+    ]
 
     // Calculate expected scores manually to verify threshold
     // Account 0: health(60*2=120) + tokens(500) + freshness(360) + quota(0.1*400=40) = 1020
@@ -115,14 +115,14 @@ describe("selectHybridAccount improved scoring", () => {
         isCoolingDown: false,
         remainingQuotaFraction: 1.0
       }
-    ];
+    ]
     // Acc 0: health(50*2=100) + tokens(500) + freshness(0) + quota(0) = 600
     // Acc 1: health(100*2=200) + tokens(500) + freshness(360) + quota(400) = 1460
     // Advantage: 1460 - 600 = 860 (> 500)
 
-    const selected = selectHybridAccount(accountsHighAdvantage, mockTokenTracker, null, 0);
-    expect(selected).toBe(1); // Switched away from session match because of high advantage
-  });
+    const selected = selectHybridAccount(accountsHighAdvantage, mockTokenTracker, null, 0)
+    expect(selected).toBe(1)// Switched away from session match because of high advantage
+  })
 
   it("respects conversation stickiness when advantage is under 500", () => {
     const accountsLowAdvantage = [
@@ -142,12 +142,12 @@ describe("selectHybridAccount improved scoring", () => {
         isCoolingDown: false,
         remainingQuotaFraction: 0.9
       }
-    ];
+    ]
     // Acc 0: health(180) + tokens(500) + freshness(0.1) + quota(320) = 1000.1
     // Acc 1: health(200) + tokens(500) + freshness(0.1) + quota(360) = 1060.1
     // Advantage: 60 (< 500)
 
-    const selected = selectHybridAccount(accountsLowAdvantage, mockTokenTracker, null, 0);
-    expect(selected).toBe(0); // Kept session match
-  });
-});
+    const selected = selectHybridAccount(accountsLowAdvantage, mockTokenTracker, null, 0)
+    expect(selected).toBe(0)// Kept session match
+  })
+})

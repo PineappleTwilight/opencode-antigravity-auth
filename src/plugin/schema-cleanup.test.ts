@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { cleanJSONSchemaForAntigravity } from "./request-helpers"
+import { cleanJSONSchemaForAntigravity } from "./request-helpers.ts"
 
 describe("cleanJSONSchemaForAntigravity recursive required cleanup", () => {
   it("removes nullable fields from required array at root", () => {
@@ -13,7 +13,7 @@ describe("cleanJSONSchemaForAntigravity recursive required cleanup", () => {
     }
     const cleaned = cleanJSONSchemaForAntigravity(schema)
     expect(cleaned.required).toEqual(["a"])
-    expect(cleaned.properties.b.description).toContain("nullable")
+    expect(cleaned.properties!.b!.description).toContain("nullable")
   })
 
   it("removes nullable fields from required array recursively", () => {
@@ -33,8 +33,8 @@ describe("cleanJSONSchemaForAntigravity recursive required cleanup", () => {
     }
     const cleaned = cleanJSONSchemaForAntigravity(schema)
     expect(cleaned.required).toEqual(["nested"])
-    expect(cleaned.properties.nested.required).toEqual(["c"])
-    expect(cleaned.properties.nested.properties.d.description).toContain("nullable")
+    expect(cleaned.properties!.nested!.required).toEqual(["c"])
+    expect(cleaned.properties!.nested!.properties!.d!.description).toContain("nullable")
   })
 
   it("handles nullable: true style from OAS", () => {
@@ -47,8 +47,8 @@ describe("cleanJSONSchemaForAntigravity recursive required cleanup", () => {
     }
     const cleaned = cleanJSONSchemaForAntigravity(schema)
     expect(cleaned.required).toBeUndefined()
-    expect(cleaned.properties.e.description).toContain("nullable")
-    expect(cleaned.properties.e.nullable).toBeUndefined()
+    expect(cleaned.properties!.e!.description).toContain("nullable")
+    expect(cleaned.properties!.e!.nullable).toBeUndefined()
   })
 
   it("handles complex nested arrays", () => {
@@ -69,7 +69,7 @@ describe("cleanJSONSchemaForAntigravity recursive required cleanup", () => {
       },
     }
     const cleaned = cleanJSONSchemaForAntigravity(schema)
-    expect(cleaned.properties.arr.items.required).toEqual(["g"])
-    expect(cleaned.properties.arr.items.properties.f.description).toContain("nullable")
+    expect(cleaned.properties!.arr!.items!.required).toEqual(["g"])
+    expect(cleaned.properties!.arr!.items!.properties!.f!.description).toContain("nullable")
   })
 })
