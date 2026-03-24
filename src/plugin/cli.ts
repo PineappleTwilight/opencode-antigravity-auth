@@ -12,7 +12,7 @@ import { updateOpencodeConfig } from "./config/updater.ts"
 export async function promptAddAnotherAccount(currentCount: number): Promise<boolean> {
   const rl = createInterface({ input, output })
   try {
-    const answer = await rl.question(`Add another account? (${currentCount} added) (y/n): `)
+    const answer = await rl.question(`${BRIGHT_CYAN}?${RESET} Add another account? (${currentCount} added) ${DIM}(y/n)${RESET} `)
     const normalized = answer.trim().toLowerCase()
     return normalized === "y" || normalized === "yes"
   } finally {
@@ -42,18 +42,44 @@ export interface LoginMenuResult {
   deleteAll?: boolean
 }
 
+const BOLD = '\x1b[1m'
+const DIM = '\x1b[2m'
+const CYAN = '\x1b[36m'
+const GREEN = '\x1b[32m'
+const YELLOW = '\x1b[33m'
+const RESET = '\x1b[0m'
+const BRIGHT_CYAN = '\x1b[96m'
+const BRIGHT_WHITE = '\x1b[97m'
+const GRAY = '\x1b[90m'
+
 async function promptLoginModeFallback(existingAccounts: ExistingAccountInfo[]): Promise<LoginMenuResult> {
   const rl = createInterface({ input, output })
   try {
-    console.log(`\n${existingAccounts.length} account(s) saved:`)
+    console.log(`\n${BRIGHT_CYAN}╭─────────────────────────────────╮${RESET}`)
+    console.log(`${BRIGHT_CYAN}│${RESET} ${BOLD}${BRIGHT_WHITE}Google Accounts · Antigravity${RESET} ${BRIGHT_CYAN}│${RESET}`)
+    console.log(`${BRIGHT_CYAN}╰─────────────────────────────────╯${RESET}`)
+    console.log(`${DIM}  ${existingAccounts.length} account(s) saved${RESET}\n`)
+
     for (const acc of existingAccounts) {
       const label = acc.email || `Account ${acc.index + 1}`
-      console.log(`  ${acc.index + 1}. ${label}`)
+      const statusIcon = acc.status === 'active' ? `${GREEN}✓${RESET}` :
+                         acc.status === 'rate-limited' ? `${YELLOW}⏳${RESET}` :
+                         acc.status === 'expired' ? `\x1b[31m✕${RESET}` :
+                         acc.status === 'verification-required' ? `\x1b[31m⚠${RESET}` : `${DIM}?${RESET}`
+      const current = acc.isCurrentAccount ? ` ${BRIGHT_CYAN}★${RESET}` : ''
+      console.log(`  ${GRAY}${String(acc.index + 1).padStart(2)}${RESET} ${statusIcon} ${label}${current}`)
     }
     console.log("")
+    console.log(`${GRAY}  ${'─'.repeat(34)}${RESET}`)
+    console.log(`  ${CYAN}a${RESET}  Add new account`)
+    console.log(`  ${CYAN}f${RESET}  Fresh start (clear all)`)
+    console.log(`  ${CYAN}c${RESET}  Check quotas`)
+    console.log(`  ${CYAN}v${RESET}  Verify account`)
+    console.log(`  ${CYAN}va${RESET} Verify all accounts`)
+    console.log(`${GRAY}  ${'─'.repeat(34)}${RESET}`)
 
     while (true) {
-      const answer = await rl.question("(a)dd new, (f)resh start, (c)heck quotas, (v)erify account, (va) verify all? [a/f/c/v/va]: ")
+      const answer = await rl.question(`  ${BRIGHT_CYAN}▸${RESET} `)
       const normalized = answer.trim().toLowerCase()
 
       if (normalized === "a" || normalized === "add") {
@@ -72,7 +98,7 @@ async function promptLoginModeFallback(existingAccounts: ExistingAccountInfo[]):
         return { mode: "verify-all", verifyAll: true }
       }
 
-      console.log("Please enter 'a', 'f', 'c', 'v', or 'va'.")
+      console.log(`  ${YELLOW}Please enter a, f, c, v, or va${RESET}`)
     }
   } finally {
     rl.close()
@@ -135,9 +161,9 @@ export async function promptLoginMode(existingAccounts: ExistingAccountInfo[]): 
       case "configure-models": {
         const result = await updateOpencodeConfig()
         if (result.success) {
-          console.log(`\n✓ Models configured in ${result.configPath}\n`)
+          console.log(`\n${GREEN}✓${RESET} Models configured in ${result.configPath}\n`)
         } else {
-          console.log(`\n✗ Failed to configure models: ${result.error}\n`)
+          console.log(`\n\x1b[31m✕${RESET} Failed to configure models: ${result.error}\n`)
         }
         continue
       }

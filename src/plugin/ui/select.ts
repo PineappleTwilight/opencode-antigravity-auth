@@ -145,13 +145,19 @@ export async function select<T>(
     }
 
     const visibleItems = items.slice(windowStart, windowEnd)
-    const headerMessage = truncateAnsi(message, Math.max(1, columns - 4))
-    writeLine(`${ANSI.dim}┌  ${ANSI.reset}${headerMessage}`)
-    
+    const headerMessage = truncateAnsi(message, Math.max(1, columns - 6))
+
+    // Draw a styled header box
+    const headerWidth = Math.min(columns - 4, stripAnsi(headerMessage).length + 6)
+    const topBorder = '╭' + '─'.repeat(Math.max(0, headerWidth - 2)) + '╮'
+    const bottomBorder = '╰' + '─'.repeat(Math.max(0, headerWidth - 2)) + '╯'
+    writeLine(`${ANSI.brightCyan}${topBorder}${ANSI.reset}`)
+    writeLine(`${ANSI.brightCyan}│${ANSI.reset} ${ANSI.bold}${ANSI.brightWhite}${headerMessage}${ANSI.reset} ${ANSI.brightCyan}│${ANSI.reset}`)
+    writeLine(`${ANSI.brightCyan}${bottomBorder}${ANSI.reset}`)
+
     if (subtitle) {
-      writeLine(`${ANSI.dim}│${ANSI.reset}`)
       const sub = truncateAnsi(subtitle, Math.max(1, columns - 4))
-      writeLine(`${ANSI.cyan}◆${ANSI.reset}  ${sub}`)
+      writeLine(`${ANSI.dim}  ${sub}${ANSI.reset}`)
       writeLine("")
     }
 
@@ -161,13 +167,13 @@ export async function select<T>(
       if (!item) continue
 
       if (item.separator) {
-        writeLine(`${ANSI.dim}│${ANSI.reset}`)
+        writeLine(`${ANSI.gray}  ${'─'.repeat(Math.max(0, columns - 6))}${ANSI.reset}`)
         continue
       }
 
       if (item.kind === 'heading') {
-        const heading = truncateAnsi(`${ANSI.dim}${ANSI.bold}${item.label}${ANSI.reset}`, Math.max(1, columns - 6))
-        writeLine(`${ANSI.cyan}│${ANSI.reset}  ${heading}`)
+        const heading = truncateAnsi(`${ANSI.bold}${ANSI.brightWhite}${item.label}${ANSI.reset}`, Math.max(1, columns - 6))
+        writeLine(`${ANSI.brightCyan}  ▸${ANSI.reset} ${heading}`)
         continue
       }
 
@@ -176,34 +182,34 @@ export async function select<T>(
 
       let labelText: string
       if (item.disabled) {
-        labelText = `${ANSI.dim}${item.label} (unavailable)${ANSI.reset}`
+        labelText = `${ANSI.dim}${ANSI.strikethrough}${item.label}${ANSI.reset}${ANSI.dim} (unavailable)${ANSI.reset}`
       } else if (isSelected) {
-        labelText = colorCode ? `${colorCode}${item.label}${ANSI.reset}` : item.label
-        if (item.hint) labelText += ` ${ANSI.dim}${item.hint}${ANSI.reset}`
+        labelText = colorCode ? `${ANSI.bold}${colorCode}${item.label}${ANSI.reset}` : `${ANSI.bold}${item.label}${ANSI.reset}`
+        if (item.hint) labelText += ` ${ANSI.italic}${ANSI.gray}${item.hint}${ANSI.reset}`
       } else {
-        labelText = colorCode 
-          ? `${ANSI.dim}${colorCode}${item.label}${ANSI.reset}` 
+        labelText = colorCode
+          ? `${colorCode}${item.label}${ANSI.reset}`
           : `${ANSI.dim}${item.label}${ANSI.reset}`
-        if (item.hint) labelText += ` ${ANSI.dim}${item.hint}${ANSI.reset}`
+        if (item.hint) labelText += ` ${ANSI.dim}${ANSI.gray}${item.hint}${ANSI.reset}`
       }
 
       // Prevent wrapping: cursor positioning relies on a fixed line count.
-      labelText = truncateAnsi(labelText, Math.max(1, columns - 8))
+      labelText = truncateAnsi(labelText, Math.max(1, columns - 10))
 
       if (isSelected) {
-        writeLine(`${ANSI.cyan}│${ANSI.reset}  ${ANSI.green}●${ANSI.reset} ${labelText}`)
+        writeLine(`${ANSI.brightCyan}  ▸ ${ANSI.brightGreen}●${ANSI.reset} ${labelText}`)
       } else {
-        writeLine(`${ANSI.cyan}│${ANSI.reset}  ${ANSI.dim}○${ANSI.reset} ${labelText}`)
+        writeLine(`${ANSI.brightCyan}│${ANSI.reset}   ${ANSI.dim}○${ANSI.reset} ${labelText}`)
       }
     }
 
     const windowHint = items.length > visibleItems.length
       ? ` (${windowStart + 1}-${windowEnd}/${items.length})`
       : ''
-    const helpText = options.help ?? `Up/Down to select | Enter: confirm | Esc: back${windowHint}`
+    const helpText = options.help ?? `↑/↓ select  •  enter confirm  •  esc back${windowHint}`
     const help = truncateAnsi(helpText, Math.max(1, columns - 6))
-    writeLine(`${ANSI.cyan}│${ANSI.reset}  ${ANSI.dim}${help}${ANSI.reset}`)
-    writeLine(`${ANSI.cyan}└${ANSI.reset}`)
+    writeLine(`${ANSI.gray}  ${'─'.repeat(Math.max(0, columns - 6))}${ANSI.reset}`)
+    writeLine(`${ANSI.gray}  ${help}${ANSI.reset}`)
 
     if (!shouldClearScreen && previousRenderedLines > linesWritten) {
       const extra = previousRenderedLines - linesWritten

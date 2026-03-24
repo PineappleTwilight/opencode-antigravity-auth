@@ -12,16 +12,43 @@ export const ANSI = {
   clearLine: '\x1b[2K',
   clearScreen: '\x1b[2J',
   moveTo: (row: number, col: number) => `\x1b[${row};${col}H`,
-  
-  // Styles
+
+  // Foreground colors
   cyan: '\x1b[36m',
   green: '\x1b[32m',
   red: '\x1b[31m',
   yellow: '\x1b[33m',
+  blue: '\x1b[34m',
+  magenta: '\x1b[35m',
+  white: '\x1b[37m',
+  gray: '\x1b[90m',
+
+  // Bright foreground colors
+  brightCyan: '\x1b[96m',
+  brightGreen: '\x1b[92m',
+  brightRed: '\x1b[91m',
+  brightYellow: '\x1b[93m',
+  brightBlue: '\x1b[94m',
+  brightMagenta: '\x1b[95m',
+  brightWhite: '\x1b[97m',
+
+  // Background colors
+  bgCyan: '\x1b[46m',
+  bgGreen: '\x1b[42m',
+  bgRed: '\x1b[41m',
+  bgYellow: '\x1b[43m',
+  bgBlue: '\x1b[44m',
+  bgMagenta: '\x1b[45m',
+  bgGray: '\x1b[100m',
+
+  // Styles
   dim: '\x1b[2m',
   bold: '\x1b[1m',
   reset: '\x1b[0m',
   inverse: '\x1b[7m',
+  italic: '\x1b[3m',
+  underline: '\x1b[4m',
+  strikethrough: '\x1b[9m',
 } as const
 
 export type KeyAction = 'up' | 'down' | 'enter' | 'escape' | 'escape-start' | null
