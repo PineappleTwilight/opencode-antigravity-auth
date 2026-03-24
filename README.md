@@ -1,33 +1,33 @@
-# Antigravity + Gemini CLI OAuth Plugin for Opencode
+# Gemini CLI + Antigravity OAuth Plugin for Opencode
 
-[![npm version](https://img.shields.io/npm/v/opencode-antigravity-auth.svg)](https://www.npmjs.com/package/opencode-antigravity-auth)
-[![npm beta](https://img.shields.io/npm/v/opencode-antigravity-auth/beta.svg?label=beta)](https://www.npmjs.com/package/opencode-antigravity-auth)
-[![npm downloads](https://img.shields.io/npm/dw/opencode-antigravity-auth.svg)](https://www.npmjs.com/package/opencode-antigravity-auth)
+[![npm version](https://img.shields.io/npm/v/opencode-antigravity-auth-tweaked.svg)](https://www.npmjs.com/package/opencode-antigravity-auth-tweaked)
+[![npm beta](https://img.shields.io/npm/v/opencode-antigravity-auth-tweaked/beta.svg?label=beta)](https://www.npmjs.com/package/opencode-antigravity-auth-tweaked)
+[![npm downloads](https://img.shields.io/npm/dw/opencode-antigravity-auth-tweaked.svg)](https://www.npmjs.com/package/opencode-antigravity-auth-tweaked)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![X (Twitter)](https://img.shields.io/badge/X-@dopesalmon-000000?style=flat&logo=x)](https://x.com/dopesalmon)
 
-Enable Opencode to authenticate against **Antigravity** (Google's IDE) via OAuth so you can use Antigravity rate limits and access models like `gemini-3.1-pro` and `claude-opus-4-6-thinking` with your Google credentials.
+Enable Opencode to authenticate against **Gemini CLI** (Google's AI CLI Utility) via OAuth so you can use CLI rate limits and access models like `gemini-3.1-pro` and `gemini-3-flash` with your Google credentials.
 
 ## What You Get
 
-- **Claude Opus 4.6, Sonnet 4.6** and **Gemini 3.1 Pro/Flash** via Google OAuth
-- **Multi-account support** — add multiple Google accounts, auto-rotates when rate-limited
-- **Dual quota system** — access both Antigravity and Gemini CLI quotas from one plugin
-- **Thinking models** — extended thinking for Claude and Gemini 3 with configurable budgets
+- ~~**Claude Opus 4.6, Sonnet 4.6**~~ and **Gemini 3.1 Pro/Flash** via Google OAuth.
+- **Multi-account support** — add multiple Google accounts, auto-rotates intelligently when rate-limited.
+- **Dual quota system** — access both **Antigravity** and **Gemini CLI** quotas from one plugin.
+- **Thinking models** — extended thinking for ~~Claude~~ and **Gemini 3/3.1** with configurable budgets
 - **Google Search grounding** — enable web search for Gemini models (auto or always-on)
 - **Auto-recovery** — handles session errors and tool failures automatically
-- **Plugin compatible** — works alongside other OpenCode plugins (oh-my-opencode, dcp, etc.)
-
+- **Plugin compatible** — (kinda) works alongside other OpenCode plugins (oh-my-opencode, dcp, etc.)
+  - **Important**: I have no control over what 3rd party plugins modify. If they break the plugin, report it as an issue, but I likely can't do much about it.
 ---
 
 <details open>
 <summary><b>⚠️ Terms of Service Warning — Read Before Installing</b></summary>
 
 > [!CAUTION]
-> Using this plugin (and any proxy for antgravity) violate Google's Terms of Service. A number of users have reported their Google accounts being **banned** or **shadow-banned** (restricted access without explicit notification).
+> Using this plugin (and any proxy for Google OAuth products) violate Google's Terms of Service. A number of users have reported their Google accounts being **banned** or **shadow-banned** (restricted access without explicit notification).
 >
 > **By using this plugin, you acknowledge:**
 > - This is an unofficial tool not endorsed by Google
+> - Google has become hyper-aggressive about catching 3rd party OAuth piggybacking
 > - Your account may be suspended or permanently banned
 > - You assume all risks associated with using this plugin
 >
@@ -66,14 +66,14 @@ Enable Opencode to authenticate against **Antigravity** (Google's IDE) via OAuth
 
 The plugin provides access to two distinct quota pools: **Antigravity** (IDE) and **Gemini CLI**.
 
-| Model                                | Quota Pool  | Variants                   |
-| ------------------------------------ | ----------- | -------------------------- |
-| `antigravity-gemini-3-pro`             | Antigravity | low, high                  |
-| `antigravity-gemini-3-flash`           | Antigravity | minimal, low, medium, high |
-| `antigravity-claude-sonnet-4-6`        | Antigravity | —                          |
-| `antigravity-claude-opus-4-6-thinking` | Antigravity | low, high                  |
-| `gemini-3-pro-preview`                 | Gemini CLI  | —                          |
-| `gemini-3-flash-preview`               | Gemini CLI  | —                          |
+| Model                                      | Quota Pool  | Variants        |
+|--------------------------------------------| ----------- |-----------------|
+| `antigravity-gemini-3-pro`                 | Antigravity | low, high       |
+| `antigravity-gemini-3-flash`               | Antigravity | minimal, low, medium, high |
+| ~~`antigravity-claude-sonnet-4-6`~~        | Antigravity | (not supported) |
+| ~~`antigravity-claude-opus-4-6-thinking`~~ | Antigravity | (not supported) |
+| `gemini-3-pro-preview`                     | Gemini CLI  | —               |
+| `gemini-3-flash-preview`                   | Gemini CLI  | —               |
 
 > **Note**: For the full list of models and detailed variant configuration, see [docs/MODEL-VARIANTS.md](docs/MODEL-VARIANTS.md). It is highly recommended to use `opencode auth login` to automatically manage these definitions.
 
@@ -110,6 +110,7 @@ For solutions to common issues (auth problems, 403 errors, MCP server conflicts,
 
 - [opencode-antigravity-auth](https://github.com/NoeFabris/opencode-antigravity-auth) by [@NoeFabris](https://github.com/noefabris)
 - [Gemini CLI](https://github.com/google-gemini/gemini-cli) by [@google-gemini](https://github.com/google-gemini)
+
 ## License
 
 MIT License. See [LICENSE](LICENSE) for details.
@@ -122,6 +123,9 @@ MIT License. See [LICENSE](LICENSE) for details.
 - Personal / internal development only
 - Respect internal quotas and data handling policies
 - Not for production services or bypassing intended limits
+- Do not adapt my code or use it as a reference for the OpenClaw project or any of its forks/related code
+  - All algorithms and implementations in this repository that are not defined by a 3rd party library are NoeFabris and I's intellectual property and are protected accordingly by the MIT license and applicable laws
+  - NoeFabris has no involvement in this project besides the base forked code
 
 ### Warning
 
@@ -131,6 +135,7 @@ By using this plugin, you acknowledge:
 - **Account risk** — Providers may suspend or ban accounts
 - **No guarantees** — APIs may change without notice
 - **Assumption of risk** — You assume all legal, financial, and technical risks
+- **How licenses work** - You agree to abide by the restrictions outlined in this document and the MIT license
 
 ### Disclaimer
 
